@@ -37,5 +37,5 @@ omegaconf
 
 # 3D Gaussian Splatting
 # Note: This requires CUDA during build. If build fails on Spaces, see alternative solutions.
-gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70
+gsplat @ https://github.com/nerfstudio-project/gsplat/releases/download/v1.5.3/gsplat-1.5.3+pt24cu124-cp310-cp310-linux_x86_64.whl
 

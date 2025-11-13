@@ -34,7 +34,7 @@ e3nn
 # Utilities
 requests
 omegaconf
-xformers
+# xformers not included - code has PyTorch fallback
 
 # NOTE: gsplat is NOT included in this version
 # 3DGS features will be disabled

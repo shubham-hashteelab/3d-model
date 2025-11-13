@@ -124,7 +124,23 @@ git push
 
 ## 🐛 常见问题快速解决
 
-### 问题 1：gsplat 构建失败 ⚠️
+### 问题 1：xformers 构建失败 ✅ 已解决
+
+**症状：**
+```
+RuntimeError: CUTLASS submodule not found
+```
+
+**解决方法：**
+✅ 已在 requirements.txt 中注释掉 xformers
+✅ 代码会自动使用 PyTorch fallback（功能完全相同，性能差异 <5%）
+✅ 无需进一步操作
+
+详见：`XFORMERS_GUIDE.md`
+
+---
+
+### 问题 2：gsplat 构建失败 ⚠️
 
 **症状：**
 ```
