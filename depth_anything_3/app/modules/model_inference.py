@@ -31,33 +31,57 @@ from depth_anything_3.utils.export.glb import export_to_glb
 from depth_anything_3.utils.export.gs import export_to_gs_video
 
 
+# Global cache for model (safe in GPU subprocess with @spaces.GPU)
+# Each subprocess gets its own copy of this global variable
+_MODEL_CACHE = None
+
+
 class ModelInference:
     """
     Handles model inference and data processing for Depth Anything 3.
     """
 
     def __init__(self):
-        """Initialize the model inference handler."""
-        self.model = None
-
-    def initialize_model(self, device: str = "cuda") -> None:
+        """Initialize the model inference handler.
+        
+        Note: Do not store model in instance variable to avoid
+        cross-process state issues with @spaces.GPU decorator.
         """
-        Initialize the DepthAnything3 model.
+        # No instance variables - model cached in global variable
+        pass
+
+    def initialize_model(self, device: str = "cuda"):
+        """
+        Initialize the DepthAnything3 model using global cache.
+        
+        This uses a global variable which is safe because @spaces.GPU
+        runs in isolated subprocess, each with its own global namespace.
 
         Args:
             device: Device to load the model on
+            
+        Returns:
+            Model instance ready for inference
         """
-        if self.model is None:
-            # Get model directory from environment variable or use default
+        global _MODEL_CACHE
+        
+        if _MODEL_CACHE is None:
+            # First time loading in this subprocess
             model_dir = os.environ.get(
-                "DA3_MODEL_DIR", "/dev/shm/da3_models/DA3HF-VITG-METRIC_VITL"
+                "DA3_MODEL_DIR", "depth-anything/DA3NESTED-GIANT-LARGE"
             )
-            self.model = DepthAnything3.from_pretrained(model_dir)
-            self.model = self.model.to(device)
+            print(f"🔄 Loading model from {model_dir}...")
+            _MODEL_CACHE = DepthAnything3.from_pretrained(model_dir)
+            _MODEL_CACHE = _MODEL_CACHE.to(device)
+            _MODEL_CACHE.eval()
+            print("✅ Model loaded and ready on GPU")
         else:
-            self.model = self.model.to(device)
-
-        self.model.eval()
+            # Model already cached in this subprocess
+            print("✅ Using cached model")
+            # Ensure it's on the correct device
+            _MODEL_CACHE = _MODEL_CACHE.to(device)
+        
+        return _MODEL_CACHE
 
     def run_inference(
         self,
@@ -97,8 +121,8 @@ class ModelInference:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         device = torch.device(device)
 
-        # Initialize model if needed
-        self.initialize_model(device)
+        # Initialize model if needed - get model instance (not stored in self)
+        model = self.initialize_model(device)
 
         # Get image paths
         print("Loading images...")
@@ -157,7 +181,7 @@ class ModelInference:
         # Run model inference
         print(f"Running inference with method: {actual_method}")
         with torch.no_grad():
-            prediction = self.model.inference(
+            prediction = model.inference(
                 image_paths, export_dir=None, process_res_method=actual_method, infer_gs=infer_gs
             )
         # num_max_points: int = 1_000_000,
@@ -190,6 +214,10 @@ class ModelInference:
 
         # Process results
         processed_data = self._process_results(target_dir, prediction, image_paths)
+
+        # CRITICAL: Move all CUDA tensors to CPU before returning
+        # This prevents CUDA initialization in main process during unpickling
+        prediction = self._move_prediction_to_cpu(prediction)
 
         # Clean up
         torch.cuda.empty_cache()
@@ -278,6 +306,47 @@ class ModelInference:
                 }
 
         return processed_data
+
+    def _move_prediction_to_cpu(self, prediction: Any) -> Any:
+        """
+        Move all CUDA tensors in prediction to CPU for safe pickling.
+        
+        This is REQUIRED for HF Spaces with @spaces.GPU decorator to avoid
+        CUDA initialization in the main process during unpickling.
+        
+        Args:
+            prediction: Prediction object that may contain CUDA tensors
+            
+        Returns:
+            Prediction object with all tensors moved to CPU
+        """
+        # Move gaussians tensors to CPU
+        if hasattr(prediction, 'gaussians') and prediction.gaussians is not None:
+            gaussians = prediction.gaussians
+            
+            # Move each tensor attribute to CPU
+            tensor_attrs = ['means', 'scales', 'rotations', 'harmonics', 'opacities']
+            for attr in tensor_attrs:
+                if hasattr(gaussians, attr):
+                    tensor = getattr(gaussians, attr)
+                    if isinstance(tensor, torch.Tensor) and tensor.is_cuda:
+                        setattr(gaussians, attr, tensor.cpu())
+                        print(f"  ✓ Moved gaussians.{attr} to CPU")
+        
+        # Move any tensors in aux dict to CPU
+        if hasattr(prediction, 'aux') and prediction.aux is not None:
+            for key, value in list(prediction.aux.items()):
+                if isinstance(value, torch.Tensor) and value.is_cuda:
+                    prediction.aux[key] = value.cpu()
+                    print(f"  ✓ Moved aux['{key}'] to CPU")
+                elif isinstance(value, dict):
+                    # Recursively handle nested dicts
+                    for k, v in list(value.items()):
+                        if isinstance(v, torch.Tensor) and v.is_cuda:
+                            value[k] = v.cpu()
+                            print(f"  ✓ Moved aux['{key}']['{k}'] to CPU")
+        
+        return prediction
 
     def cleanup(self) -> None:
         """Clean up GPU memory."""

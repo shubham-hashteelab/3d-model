@@ -24,8 +24,9 @@ import spaces
 from depth_anything_3.app.gradio_app import DepthAnything3App
 from depth_anything_3.app.modules.model_inference import ModelInference
 
-# Monkey-patch the run_inference method to use @spaces.GPU decorator
-# This allows dynamic GPU allocation on Hugging Face Spaces
+# Apply @spaces.GPU decorator to run_inference method
+# This ensures GPU operations happen in isolated subprocess
+# Model loading and inference will occur in GPU subprocess, not main process
 original_run_inference = ModelInference.run_inference
 
 @spaces.GPU(duration=120)  # Request GPU for up to 120 seconds per inference
@@ -33,8 +34,10 @@ def gpu_run_inference(self, *args, **kwargs):
     """
     GPU-accelerated inference with Spaces decorator.
     
-    This function wraps the original run_inference method with @spaces.GPU,
-    which ensures the model is moved to GPU when needed on HF Spaces.
+    This function runs in a GPU subprocess where:
+    - Model is loaded and moved to GPU (safe)
+    - CUDA operations are allowed
+    - All CUDA tensors are moved to CPU before return (for pickle safety)
     """
     return original_run_inference(self, *args, **kwargs)
 
