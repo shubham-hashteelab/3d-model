@@ -1,0 +1,38 @@
+# Core dependencies
+torch>=2.0.0
+torchvision
+einops
+huggingface_hub
+numpy<2
+opencv-python
+
+# Gradio and Spaces
+gradio>=5.0.0
+spaces
+pillow>=9.0
+
+# 3D and visualization
+trimesh
+open3d
+plyfile
+
+# Image processing
+imageio
+pillow_heif
+safetensors
+
+# Video processing
+moviepy==1.0.3
+
+# Math and geometry
+e3nn
+
+# Utilities
+requests
+omegaconf
+xformers
+
+# 3D Gaussian Splatting
+# Note: This requires CUDA during build. If build fails on Spaces, see alternative solutions.
+gsplat @ git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70
+
