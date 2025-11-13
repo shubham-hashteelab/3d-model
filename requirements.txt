@@ -30,7 +30,10 @@ e3nn
 # Utilities
 requests
 omegaconf
-xformers
+# xformers - install separately if needed, or use specific version with pre-built wheels
+# For PyTorch 2.0+ with CUDA 11.8, use:
+# xformers==0.0.22
+# Or install after torch with: pip install xformers --no-deps
 
 # 3D Gaussian Splatting
 # Note: This requires CUDA during build. If build fails on Spaces, see alternative solutions.
