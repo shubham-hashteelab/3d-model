@@ -68,9 +68,10 @@ if __name__ == "__main__":
     print(f"📁 Workspace Directory: {workspace_dir}")
     print(f"🖼️  Gallery Directory: {gallery_dir}")
     
+    # Launch with minimal, Spaces-compatible configuration
+    # Some parameters may cause routing issues, so we use minimal config
     app.launch(
         host="0.0.0.0",  # Required for Spaces
         port=7860,       # Standard Gradio port
-        share=False,     # Not needed on Spaces
-        debug=False
+        share=False      # Not needed on Spaces
     )

@@ -54,32 +54,42 @@ class ModelInference:
         """
         Initialize the DepthAnything3 model using global cache.
         
+        Optimization: Load model to CPU first, then move to GPU when needed.
+        This is faster than reloading from disk each time.
+        
         This uses a global variable which is safe because @spaces.GPU
         runs in isolated subprocess, each with its own global namespace.
 
         Args:
-            device: Device to load the model on
+            device: Device to run inference on (will move model to this device)
             
         Returns:
-            Model instance ready for inference
+            Model instance ready for inference on specified device
         """
         global _MODEL_CACHE
         
         if _MODEL_CACHE is None:
             # First time loading in this subprocess
+            # Load to CPU first (faster than loading directly to GPU)
             model_dir = os.environ.get(
                 "DA3_MODEL_DIR", "depth-anything/DA3NESTED-GIANT-LARGE"
             )
-            print(f"🔄 Loading model from {model_dir}...")
+            print(f"🔄 Loading model from {model_dir} to CPU...")
+            print("   (Model files are cached on disk)")
             _MODEL_CACHE = DepthAnything3.from_pretrained(model_dir)
-            _MODEL_CACHE = _MODEL_CACHE.to(device)
+            # Load to CPU first (faster, and allows reuse)
+            _MODEL_CACHE = _MODEL_CACHE.to("cpu")
             _MODEL_CACHE.eval()
-            print("✅ Model loaded and ready on GPU")
-        else:
-            # Model already cached in this subprocess
-            print("✅ Using cached model")
-            # Ensure it's on the correct device
+            print("✅ Model loaded to CPU memory (cached in subprocess)")
+        
+        # Move to target device for inference
+        if device != "cpu" and next(_MODEL_CACHE.parameters()).device.type != device:
+            print(f"🚀 Moving model from {next(_MODEL_CACHE.parameters()).device} to {device}...")
             _MODEL_CACHE = _MODEL_CACHE.to(device)
+            print(f"✅ Model ready on {device}")
+        elif device == "cpu":
+            # Already on CPU or requested CPU
+            pass
         
         return _MODEL_CACHE
 

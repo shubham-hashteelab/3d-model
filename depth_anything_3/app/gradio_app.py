@@ -619,8 +619,14 @@ class DepthAnything3App:
             **kwargs: Additional arguments for demo.launch()
         """
         demo = self.create_app()
+        # Configure launch settings for Spaces compatibility
+        # Use minimal config to avoid routing issues
         demo.queue(max_size=20).launch(
-            show_error=True, ssr_mode=False, server_name=host, server_port=port, **kwargs
+            show_error=True,
+            ssr_mode=False,
+            server_name=host,
+            server_port=port,
+            **kwargs
         )
 
 
