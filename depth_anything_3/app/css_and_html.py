@@ -380,23 +380,8 @@ def get_header_html(logo_base64=None):
                 animation: techGradient 3s ease infinite;
                 text-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
                 letter-spacing: 2px;">
-                Depth Anything 3
+                Hashtee Lab 3D Modeling
             </h1>
-            <p style="margin: 15px 0 0 0; font-size: 2.16em; font-weight: 300;" class="header-subtitle">
-                Recovering the Visual Space from Any Views
-            </p>
-            <div style="margin-top: 20px;">
-                <!-- Revert buttons to original inline styles -->
-                <a href="https://depth-anything-3.github.io" target="_blank" class="link-btn">
-                    <i class="fas fa-globe" style="margin-right: 8px;"></i> Project Page
-                </a>
-                <a href="https://arxiv.org/abs/2511.10647" target="_blank" class="link-btn">
-                    <i class="fas fa-file-pdf" style="margin-right: 8px;"></i> Paper
-                </a>
-                <a href="https://github.com/ByteDance-Seed/Depth-Anything-3" target="_blank" class="link-btn">
-                    <i class="fab fa-github" style="margin-right: 8px;"></i> Code
-                </a>
-            </div>
         </div>
     </div>
 
@@ -433,48 +418,6 @@ def get_description_html():
         str: HTML string for the description
     """
     return """
-    <div class="description-container" style="padding: 25px; border-radius: 15px; margin: 0 0 20px 0;">
-        <h2 class="description-title" style="margin-top: 0; font-size: 1.6em; text-align: center;">
-            <i class="fas fa-bullseye fa-color-red" style="margin-right: 8px;"></i> What This Demo Does
-        </h2>
-        <div class="description-content" style="padding: 20px; border-radius: 10px; margin: 15px 0; text-align: center;">
-            <p class="description-main" style="line-height: 1.6; margin: 0; font-size: 1.45em;">
-                <strong>Upload images or videos</strong> → <strong>Get <span class="metric-text">Metric</span> <span class="pointcloud-text">Point Clouds</span>, <span class="cameras-text">Cameras</span> and <span class="gaussians-text">Novel Views</span></strong> → <strong>Explore in 3D</strong>
-            </p>
-        </div>
-
-        <div style="text-align: center; margin-top: 15px;">
-            <p class="description-tip" style="font-style: italic; margin: 0;">
-                <i class="fas fa-lightbulb fa-color-yellow" style="margin-right: 8px;"></i> <strong>Tip:</strong> Landscape-oriented images or videos are preferred for best 3D recovering.
-            </p>
-        </div>
-    </div>
-
-    <style>
-        @media (prefers-color-scheme: dark) {
-            .description-container {
-                background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-                border: 1px solid rgba(59, 130, 246, 0.2);
-            }
-            .description-title { color: #3b82f6; }
-            .description-content { background: rgba(0, 0, 0, 0.3); }
-            .description-main { color: #e0e0e0; }
-            .description-text { color: #cbd5e1; }
-            .description-tip { color: #cbd5e1; }
-        }
-
-        @media (prefers-color-scheme: light) {
-            .description-container {
-                background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
-                border: 1px solid rgba(59, 130, 246, 0.3);
-            }
-            .description-title { color: #3b82f6; }
-            .description-content { background: transparent; }
-            .description-main { color: #1e293b; }
-            .description-text { color: #475569; }
-            .description-tip { color: #475569; }
-        }
-    </style>
     """
 
 
@@ -486,52 +429,6 @@ def get_acknowledgements_html():
         str: HTML string for the acknowledgements
     """
     return """
-    <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-                padding: 25px; border-radius: 15px; margin: 20px 0; border: 1px solid rgba(59, 130, 246, 0.2);">
-        <h3 style="color: #3b82f6; margin-top: 0; text-align: center; font-size: 1.4em;">
-            <i class="fas fa-trophy fa-color-yellow" style="margin-right: 8px;"></i> Research Credits & Acknowledgments
-        </h3>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 15px 0;">
-            <!-- Original Research Section (Left) -->
-            <div style="text-align: center;">
-                <h4 style="color: #8b5cf6; margin: 10px 0;"><i class="fas fa-flask fa-color-green" style="margin-right: 8px;"></i> Original Research</h4>
-                <p style="color: #e0e0e0; margin: 5px 0;">
-                    <a href="https://depth-anything-3.github.io" target="_blank"
-                       style="color: #3b82f6; text-decoration: none; font-weight: 600;">
-                        Depth Anything 3
-                    </a>
-                </p>
-            </div>
-
-            <!-- Previous Versions Section (Right) -->
-            <div style="text-align: center;">
-                <h4 style="color: #8b5cf6; margin: 10px 0;"><i class="fas fa-history fa-color-blue" style="margin-right: 8px;"></i> Previous Versions</h4>
-                <div style="display: flex; flex-direction: row; gap: 15px; justify-content: center; align-items: center;">
-                    <p style="color: #e0e0e0; margin: 0;">
-                        <a href="https://huggingface.co/spaces/LiheYoung/Depth-Anything" target="_blank"
-                           style="color: #3b82f6; text-decoration: none; font-weight: 600;">
-                            Depth-Anything
-                        </a>
-                    </p>
-                    <span style="color: #e0e0e0;">•</span>
-                    <p style="color: #e0e0e0; margin: 0;">
-                        <a href="https://huggingface.co/spaces/depth-anything/Depth-Anything-V2" target="_blank"
-                           style="color: #3b82f6; text-decoration: none; font-weight: 600;">
-                            Depth-Anything-V2
-                        </a>
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- HF Demo Adapted from - Centered at the bottom of the whole block -->
-        <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(59, 130, 246, 0.3); text-align: center;">
-            <p style="color: #a0a0a0; font-size: 0.9em; margin: 0;">
-                <i class="fas fa-code-branch fa-color-gray" style="margin-right: 5px;"></i> HF demo adapted from <a href="https://huggingface.co/spaces/facebook/map-anything" target="_blank" style="color: inherit; text-decoration: none;">Map Anything</a>
-            </p>
-        </div>
-    </div>
     """
 
 

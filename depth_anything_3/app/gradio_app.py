@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Refactored Gradio App for Depth Anything 3.
+Refactored Gradio App for Hashtee Lab 3D Modeling.
 
 This is the main application file that orchestrates all components.
 The original functionality has been split into modular components for better maintainability.
@@ -35,7 +35,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class DepthAnything3App:
     """
-    Main application class for Depth Anything 3 Gradio app.
+    Main application class for Hashtee Lab 3D Modeling Gradio app.
     """
 
     def __init__(self, model_dir: str = None, workspace_dir: str = None, gallery_dir: str = None):
@@ -255,11 +255,11 @@ class DepthAnything3App:
                             outputs=[gs_trj_mode, gs_video_quality, gs_video, gs_info],
                         )
 
-            # Example scenes section
-            gr.Markdown("## Example Scenes")
+            # Example scenes section - REMOVED
+            # gr.Markdown("## Example Scenes")
 
-            scenes = self.ui_components.create_example_scenes_section()
-            scene_components = self.ui_components.create_example_scene_grid(scenes)
+            scenes = []  # Empty scenes list - examples disabled
+            scene_components = []  # Empty scene components - examples disabled
 
             # Set up event handlers
             self._setup_event_handlers(
@@ -657,7 +657,7 @@ class DepthAnything3App:
 def main():
     """Main function to run the application."""
     parser = argparse.ArgumentParser(
-        description="Depth Anything 3 Gradio Application",
+        description="Hashtee Lab 3D Modeling Gradio Application",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -732,7 +732,7 @@ Examples:
     # Prepare launch arguments
     launch_kwargs = {"share": args.share, "debug": args.debug}
 
-    print("Starting Depth Anything 3 Gradio App...")
+    print("Starting Hashtee Lab 3D Modeling Gradio App...")
     print(f"Host: {args.host}")
     print(f"Port: {args.port}")
     print(f"Model Directory: {args.model_dir}")
