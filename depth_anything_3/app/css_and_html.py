@@ -22,294 +22,90 @@ used in the Gradio interface.
 
 # CSS Styles for the Gradio interface
 GRADIO_CSS = """
-/* Add Font Awesome CDN with all styles including brands and colors */
-@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
-
-/* Add custom styles for colored icons */
-.fa-color-blue {
-    color: #3b82f6;
-}
-
-.fa-color-purple {
-    color: #8b5cf6;
-}
-
-.fa-color-cyan {
-    color: #06b6d4;
-}
-
-.fa-color-green {
-    color: #10b981;
-}
-
-.fa-color-yellow {
-    color: #f59e0b;
-}
-
-.fa-color-red {
-    color: #ef4444;
-}
-
+/* Minimal, clean design */
 .link-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     text-decoration: none;
-    padding: 12px 24px;
-    border-radius: 50px;
+    padding: 10px 20px;
+    border-radius: 6px;
     font-weight: 500;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
-/* Dark mode tech theme */
+/* Dark mode minimal theme */
 @media (prefers-color-scheme: dark) {
     html, body {
-        background: #1e293b;
-        color: #ffffff;
+        background: #1a1a1a;
+        color: #e0e0e0;
     }
 
     .gradio-container {
-        background: #1e293b;
-        color: #ffffff;
+        background: #1a1a1a;
+        color: #e0e0e0;
     }
 
     .link-btn {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.1);
         color: white;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .link-btn:hover {
-        background: rgba(255, 255, 255, 0.3);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    }
-
-    .tech-bg {
-        background: linear-gradient(135deg, #0f172a, #1e293b); /* Darker colors */
-        position: relative;
-        overflow: hidden;
-    }
-
-    .tech-bg::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background:
-            radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.15) 0%, transparent 50%), /* Reduced opacity */
-            radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.15) 0%, transparent 50%), /* Reduced opacity */
-            radial-gradient(circle at 40% 40%, rgba(18, 194, 233, 0.1) 0%, transparent 50%); /* Reduced opacity */
-        animation: techPulse 8s ease-in-out infinite;
+        background: rgba(255, 255, 255, 0.15);
     }
 
     .gradio-container .panel,
     .gradio-container .block,
     .gradio-container .form {
-        background: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(59, 130, 246, 0.2);
-        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
     }
 
     .gradio-container * {
-        color: #ffffff;
+        color: #e0e0e0;
     }
 
     .gradio-container label {
-        color: #e0e0e0;
+        color: #d0d0d0;
     }
 
     .gradio-container .markdown {
-        color: #e0e0e0;
+        color: #d0d0d0;
     }
 }
 
-/* Light mode tech theme */
+/* Light mode minimal theme */
 @media (prefers-color-scheme: light) {
     html, body {
         background: #ffffff;
-        color: #1e293b;
+        color: #333333;
     }
 
     .gradio-container {
         background: #ffffff;
-        color: #1e293b;
-    }
-
-    .tech-bg {
-        background: linear-gradient(135deg, #ffffff, #f1f5f9);
-        position: relative;
-        overflow: hidden;
+        color: #333333;
     }
 
     .link-btn {
-        background: rgba(59, 130, 246, 0.15);
-        color: var(--body-text-color);
-        border: 1px solid rgba(59, 130, 246, 0.3);
+        background: rgba(0, 0, 0, 0.05);
+        color: #333333;
+        border: 1px solid rgba(0, 0, 0, 0.1);
     }
 
     .link-btn:hover {
-        background: rgba(59, 130, 246, 0.25);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.2);
-    }
-
-    .tech-bg::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background:
-            radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 40% 40%, rgba(18, 194, 233, 0.08) 0%, transparent 50%);
-        animation: techPulse 8s ease-in-out infinite;
+        background: rgba(0, 0, 0, 0.1);
     }
 
     .gradio-container .panel,
     .gradio-container .block,
     .gradio-container .form {
-        background: rgba(255, 255, 255, 0.8);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        background: rgba(0, 0, 0, 0.02);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
     }
-
-    .gradio-container * {
-        color: #1e293b;
-    }
-
-    .gradio-container label {
-        color: #334155;
-    }
-
-    .gradio-container .markdown {
-        color: #334155;
-    }
-}
-
-
-
-
-@keyframes techPulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 0.8; }
-}
-
-/* Custom log with tech gradient */
-.custom-log * {
-    font-style: italic;
-    font-size: 22px !important;
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    background-size: 400% 400%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    font-weight: bold !important;
-    color: transparent !important;
-    text-align: center !important;
-    animation: techGradient 3s ease infinite;
-}
-
-@keyframes techGradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-}
-
-@keyframes metricPulse {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
-
-@keyframes pointcloudPulse {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
-
-@keyframes camerasPulse {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
-
-@keyframes gaussiansPulse {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-}
-
-/* Special colors for key terms - Global styles */
-.metric-text {
-    background: linear-gradient(45deg, #ff6b6b, #ff8e53, #ff6b6b);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent !important;
-    animation: metricPulse 2s ease-in-out infinite;
-    font-weight: 700;
-    text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
-}
-
-.pointcloud-text {
-    background: linear-gradient(45deg, #4ecdc4, #44a08d, #4ecdc4);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent !important;
-    animation: pointcloudPulse 2.5s ease-in-out infinite;
-    font-weight: 700;
-    text-shadow: 0 0 10px rgba(78, 205, 196, 0.5);
-}
-
-.cameras-text {
-    background: linear-gradient(45deg, #667eea, #764ba2, #667eea);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent !important;
-    animation: camerasPulse 3s ease-in-out infinite;
-    font-weight: 700;
-    text-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
-}
-
-.gaussians-text {
-    background: linear-gradient(45deg, #f093fb, #f5576c, #f093fb);
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent !important;
-    animation: gaussiansPulse 2.2s ease-in-out infinite;
-    font-weight: 700;
-    text-shadow: 0 0 10px rgba(240, 147, 251, 0.5);
-}
-
-.example-log * {
-    font-style: italic;
-    font-size: 16px !important;
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent !important;
-}
-
-#my_radio .wrap {
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: center;
-    align-items: center;
-}
-
-#my_radio .wrap label {
-    display: flex;
-    width: 50%;
-    justify-content: center;
-    align-items: center;
-    margin: 0;
-    padding: 10px 0;
-    box-sizing: border-box;
 }
 
 /* Align navigation buttons with dropdown bottom */
@@ -335,8 +131,8 @@ GRADIO_CSS = """
 
 .clickable-thumbnail:hover img {
     cursor: pointer !important;
-    opacity: 0.8;
-    transition: opacity 0.3s ease;
+    opacity: 0.85;
+    transition: opacity 0.2s ease;
 }
 
 /* Make thumbnail containers narrower horizontally */
@@ -369,41 +165,16 @@ def get_header_html(logo_base64=None):
         str: HTML string for the header
     """
     return """
-    <div class="tech-bg" style="text-align: center; margin-bottom: 5px; padding: 40px 20px; border-radius: 15px; position: relative; overflow: hidden;">
-        <div style="position: relative; z-index: 2;">
-            <h1 style="margin: 0; font-size: 3.5em; font-weight: 700;
-                background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-                background-size: 400% 400%;
-                -webkit-background-clip: text;
-                background-clip: text;
-                color: transparent;
-                animation: techGradient 3s ease infinite;
-                text-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
-                letter-spacing: 2px;">
-                Hashtee Lab 3D Modeling
-            </h1>
-        </div>
+    <div style="text-align: center; margin-bottom: 20px; padding: 30px 20px;">
+        <h1 style="margin: 0; font-size: 2.5em; font-weight: 600; color: #333; letter-spacing: 1px;">
+            Hashtee Lab 3D Modeling
+        </h1>
     </div>
 
     <style>
-        /* Ensure tech-bg class is properly applied in dark mode */
         @media (prefers-color-scheme: dark) {
-            .header-subtitle {
-                color: #cbd5e1;
-            }
-            /* Increase priority to ensure background color is properly applied */
-            .tech-bg {
-                background: linear-gradient(135deg, #0f172a, #1e293b) !important;
-            }
-        }
-
-        @media (prefers-color-scheme: light) {
-            .header-subtitle {
-                color: #475569;
-            }
-            /* Also add explicit background color for light mode */
-            .tech-bg {
-                background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%) !important;
+            h1 {
+                color: #e0e0e0 !important;
             }
         }
     </style>
@@ -434,7 +205,7 @@ def get_acknowledgements_html():
 
 def get_gradio_theme():
     """
-    Get the configured Gradio theme with adaptive tech colors.
+    Get the configured Gradio theme with minimal, clean design.
 
     Returns:
         gr.themes.Base: Configured Gradio theme
@@ -443,49 +214,49 @@ def get_gradio_theme():
 
     return gr.themes.Base(
         primary_hue=gr.themes.Color(
-            c50="#eff6ff",
-            c100="#dbeafe",
-            c200="#bfdbfe",
-            c300="#93c5fd",
-            c400="#60a5fa",
-            c500="#3b82f6",
-            c600="#2563eb",
-            c700="#1d4ed8",
-            c800="#1e40af",
-            c900="#1e3a8a",
-            c950="#172554",
+            c50="#f5f5f5",
+            c100="#e5e5e5",
+            c200="#d4d4d4",
+            c300="#a3a3a3",
+            c400="#737373",
+            c500="#525252",
+            c600="#404040",
+            c700="#262626",
+            c800="#171717",
+            c900="#0a0a0a",
+            c950="#000000",
         ),
         secondary_hue=gr.themes.Color(
-            c50="#f5f3ff",
-            c100="#ede9fe",
-            c200="#ddd6fe",
-            c300="#c4b5fd",
-            c400="#a78bfa",
-            c500="#8b5cf6",
-            c600="#7c3aed",
-            c700="#6d28d9",
-            c800="#5b21b6",
-            c900="#4c1d95",
-            c950="#2e1065",
+            c50="#fafafa",
+            c100="#f4f4f5",
+            c200="#e4e4e7",
+            c300="#d4d4d8",
+            c400="#a1a1aa",
+            c500="#71717a",
+            c600="#52525b",
+            c700="#3f3f46",
+            c800="#27272a",
+            c900="#18181b",
+            c950="#09090b",
         ),
         neutral_hue=gr.themes.Color(
-            c50="#f8fafc",
-            c100="#f1f5f9",
-            c200="#e2e8f0",
-            c300="#cbd5e1",
-            c400="#94a3b8",
-            c500="#64748b",
-            c600="#475569",
-            c700="#334155",
-            c800="#1e293b",
-            c900="#0f172a",
-            c950="#020617",
+            c50="#fafafa",
+            c100="#f5f5f5",
+            c200="#e5e5e5",
+            c300="#d4d4d4",
+            c400="#a3a3a3",
+            c500="#737373",
+            c600="#525252",
+            c700="#404040",
+            c800="#262626",
+            c900="#171717",
+            c950="#0a0a0a",
         ),
     )
 
 
 # Measure tab instructions HTML
 MEASURE_INSTRUCTIONS_HTML = """
-### Click points on the image to compute distance.
-> <i class="fas fa-triangle-exclamation fa-color-red" style="margin-right: 5px;"></i> Metric scale estimation is difficult on aerial/drone images.
+### Click two points on the image to measure distance.
+> **Note:** Measurements may be less accurate on aerial/drone images.
 """

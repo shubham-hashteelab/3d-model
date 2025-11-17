@@ -207,12 +207,12 @@ class DepthAnything3App:
 
                         # Tabbed interface
                         with gr.Tabs():
-                            with gr.Tab("Point Cloud & Cameras"):
+                            with gr.Tab("3D Model"):
                                 reconstruction_output = (
                                     self.ui_components.create_3d_viewer_section()
                                 )
 
-                            with gr.Tab("Metric Depth"):
+                            with gr.Tab("Measure"):
                                 (
                                     prev_measure_btn,
                                     measure_view_selector,
@@ -222,7 +222,7 @@ class DepthAnything3App:
                                     measure_text,
                                 ) = self.ui_components.create_measure_section()
 
-                            with gr.Tab("3DGS Rendered Novel Views"):
+                            with gr.Tab("Gaussian View"):
                                 gs_video, gs_info = self.ui_components.create_nvs_video()
 
                         # Inference control section (before inference)

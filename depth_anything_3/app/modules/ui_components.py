@@ -93,12 +93,8 @@ class UIComponents:
         with gr.Column():
             gs_info = gr.Markdown(
                 (
-                    "‼️ **3D Gaussian Splatting rendering is currently DISABLED.** <br><br><br>"
-                    "To render novel views from 3DGS, "
-                    "enable **Infer 3D Gaussian Splatting** below. <br>"
-                    "Next, in **Visualization Options**, "
-                    "*optionally* configure the **rendering trajectory** (default: smooth) "
-                    "and **video quality** (default: low), "
+                    "**Gaussian rendering is currently disabled.** \n\n"
+                    "To enable, check **Infer 3D Gaussian Splatting** below, "
                     "then click **Reconstruct**."
                 ),
                 visible=True,
@@ -106,7 +102,7 @@ class UIComponents:
             )
             gs_video = gr.Video(
                 height=520,
-                label="3DGS Rendered NVS Video (depth shown for reference only)",
+                label="Gaussian Rendered Video",
                 interactive=False,
                 visible=False,
             )
@@ -218,10 +214,7 @@ class UIComponents:
             infer_gs = gr.Checkbox(
                 label="Infer 3D Gaussian Splatting",
                 value=False,
-                info=(
-                    'Enable novel view rendering from 3DGS (<i class="fas fa-triangle-exclamation '
-                    'fa-color-red"></i> requires extra processing time)'
-                ),
+                info="Enable Gaussian rendering (requires extra processing time)",
                 scale=1,
             )
 
@@ -252,15 +245,15 @@ class UIComponents:
                 gs_trj_mode = gr.Dropdown(
                     choices=["smooth", "extend"],
                     value="smooth",
-                    label=("Rendering trajectory for 3DGS viewpoints (requires n_views ≥ 2)"),
-                    info=("'smooth' for view interpolation; 'extend' for longer trajectory"),
+                    label="Rendering Trajectory",
+                    info="'smooth' for view interpolation; 'extend' for longer trajectory",
                     visible=False,  # initially hidden
                 )
                 gs_video_quality = gr.Dropdown(
                     choices=["low", "medium", "high"],
                     value="low",
-                    label=("Video quality for 3DGS rendered outputs"),
-                    info=("'low' for faster loading speed; 'high' for better visual quality"),
+                    label="Video Quality",
+                    info="'low' for faster loading; 'high' for better quality",
                     visible=False,  # initially hidden
                 )
 
