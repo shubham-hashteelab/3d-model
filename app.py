@@ -20,7 +20,6 @@ for model inference on Hugging Face Spaces.
 """
 
 import os
-import spaces
 from depth_anything_3.app.gradio_app import DepthAnything3App
 from depth_anything_3.app.modules.model_inference import ModelInference
 
@@ -29,7 +28,6 @@ from depth_anything_3.app.modules.model_inference import ModelInference
 # Model loading and inference will occur in GPU subprocess, not main process
 original_run_inference = ModelInference.run_inference
 
-@spaces.GPU(duration=120)  # Request GPU for up to 120 seconds per inference
 def gpu_run_inference(self, *args, **kwargs):
     """
     GPU-accelerated inference with Spaces decorator.
