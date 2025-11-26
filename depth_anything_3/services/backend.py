@@ -32,7 +32,8 @@ import numpy as np
 import cv2
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from PIL import Image
@@ -576,6 +577,15 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         title="Depth Anything 3 Backend",
         description="Model inference service for Depth Anything 3",
         version="1.0.0",
+    )
+
+    # Configure CORS
+    _app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # Store gallery directory globally for use in routes
@@ -1234,12 +1244,24 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             export_format=request.export_format,
         )
 
-    @_app.post("/process-files", response_class=StreamingResponse)
+    @_app.post("/process-files")
     async def process_files(
+        request: Request,
         files: List[UploadFile] = File(...),
-        num_frames: int = 10
+        num_frames: int = Form(10),
+        output_format: str = Form("glb"),
+        include_metadata: bool = Form(False),
     ):
-        """Process uploaded images/videos and return GLB file directly."""
+        """Process uploaded images/videos and return GLB/PLY file directly.
+
+        Args:
+            files: Uploaded image/video files
+            num_frames: Number of frames to extract from video
+            output_format: Output format - 'glb', 'ply', or 'json' (returns metadata with base64 model)
+            include_metadata: If True, returns JSON with model data + camera intrinsics/extrinsics
+        """
+        # Log the received parameters
+        print(f"[process-files] output_format={output_format}, num_frames={num_frames}, include_metadata={include_metadata}")
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
@@ -1304,36 +1326,138 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     show_cameras=True,  # Default from gradio
                 )
                 
-                # Export GLB to memory
+
                 from ..utils.export.glb import export_to_glb
-                
-                # Export GLB (creates scene.glb in temp_dir)
                 glb_path = export_to_glb(
                     prediction,
                     export_dir=temp_dir,
                     conf_thresh_percentile=10,
-                    num_max_points=10000000,  # Increased for higher quality output
+                    num_max_points=10000000,
                     show_cameras=True,
-                    filter_black_bg=False,  # Default from gradio
-                    filter_white_bg=False,  # Default from gradio
+                    filter_black_bg=False,
+                    filter_white_bg=False,
                 )
-                
-                # Read the GLB file into memory
-                with open(glb_path, "rb") as f:
-                    glb_data = f.read()
-                
-                # Clean up
-                cleanup_cuda_memory()
-                
-                # Return GLB file as streaming response
-                def generate():
-                    yield glb_data
-                
-                return StreamingResponse(
-                    generate(),
-                    media_type="model/gltf-binary",
-                    headers={"Content-Disposition": "attachment; filename=output.glb"}
-                )
+
+                # Extract metadata from prediction
+                def extract_metadata(pred):
+                    """Extract camera and prediction metadata."""
+                    metadata = {
+                        "num_frames": len(processed_images),
+                        "image_paths": [os.path.basename(p) for p in processed_images],
+                    }
+
+                    # Extract intrinsics if available
+                    if hasattr(pred, 'intrinsics') and pred.intrinsics is not None:
+                        intrinsics = pred.intrinsics
+                        if hasattr(intrinsics, 'cpu'):
+                            intrinsics = intrinsics.cpu().numpy()
+                        metadata["intrinsics"] = intrinsics.tolist()
+
+                    # Extract extrinsics (camera poses) if available
+                    if hasattr(pred, 'extrinsics') and pred.extrinsics is not None:
+                        extrinsics = pred.extrinsics
+                        if hasattr(extrinsics, 'cpu'):
+                            extrinsics = extrinsics.cpu().numpy()
+                        metadata["extrinsics"] = extrinsics.tolist()
+
+                    # Extract camera-to-world transforms if available
+                    if hasattr(pred, 'c2w') and pred.c2w is not None:
+                        c2w = pred.c2w
+                        if hasattr(c2w, 'cpu'):
+                            c2w = c2w.cpu().numpy()
+                        metadata["camera_to_world"] = c2w.tolist()
+
+                    # Extract world-to-camera transforms if available
+                    if hasattr(pred, 'w2c') and pred.w2c is not None:
+                        w2c = pred.w2c
+                        if hasattr(w2c, 'cpu'):
+                            w2c = w2c.cpu().numpy()
+                        metadata["world_to_camera"] = w2c.tolist()
+
+                    # Extract depth information if available
+                    if hasattr(pred, 'depth') and pred.depth is not None:
+                        depth = pred.depth
+                        if hasattr(depth, 'cpu'):
+                            depth = depth.cpu().numpy()
+                        metadata["depth_shape"] = list(depth.shape)
+                        metadata["depth_min"] = float(depth.min())
+                        metadata["depth_max"] = float(depth.max())
+
+                    # Extract confidence if available
+                    if hasattr(pred, 'conf') and pred.conf is not None:
+                        conf = pred.conf
+                        if hasattr(conf, 'cpu'):
+                            conf = conf.cpu().numpy()
+                        metadata["confidence_shape"] = list(conf.shape)
+                        metadata["confidence_mean"] = float(conf.mean())
+
+                    # Extract point cloud info if available
+                    if hasattr(pred, 'pts3d') and pred.pts3d is not None:
+                        pts3d = pred.pts3d
+                        if hasattr(pts3d, 'cpu'):
+                            pts3d = pts3d.cpu().numpy()
+                        metadata["points3d_shape"] = list(pts3d.shape)
+
+                    # Extract focal length if available
+                    if hasattr(pred, 'focals') and pred.focals is not None:
+                        focals = pred.focals
+                        if hasattr(focals, 'cpu'):
+                            focals = focals.cpu().numpy()
+                        metadata["focals"] = focals.tolist()
+
+                    # Extract principal points if available
+                    if hasattr(pred, 'pp') and pred.pp is not None:
+                        pp = pred.pp
+                        if hasattr(pp, 'cpu'):
+                            pp = pp.cpu().numpy()
+                        metadata["principal_points"] = pp.tolist()
+
+                    return metadata
+
+                # If output_format is 'json' or include_metadata is True, return JSON with metadata
+                if output_format == "json" or include_metadata:
+                    import base64
+                    from fastapi.responses import JSONResponse
+
+                    metadata = extract_metadata(prediction)
+
+                    # Read GLB data and encode as base64
+                    with open(glb_path, "rb") as f:
+                        glb_data = f.read()
+                    metadata["model_glb_base64"] = base64.b64encode(glb_data).decode('utf-8')
+                    metadata["model_format"] = "glb"
+                    metadata["model_size_bytes"] = len(glb_data)
+
+                    cleanup_cuda_memory()
+                    return JSONResponse(content=metadata)
+
+                # If output_format is 'ply', convert GLB to PLY
+                elif output_format == "ply":
+                    import trimesh
+                    ply_path = os.path.join(temp_dir, "output.ply")
+                    mesh = trimesh.load(glb_path, file_type="glb")
+                    mesh.export(ply_path, file_type="ply")
+                    with open(ply_path, "rb") as f:
+                        ply_data = f.read()
+                    cleanup_cuda_memory()
+                    def generate():
+                        yield ply_data
+                    return StreamingResponse(
+                        generate(),
+                        media_type="application/octet-stream",
+                        headers={"Content-Disposition": "attachment; filename=output.ply"}
+                    )
+                else:
+                    with open(glb_path, "rb") as f:
+                        glb_data = f.read()
+                    cleanup_cuda_memory()
+                    def generate():
+                        yield glb_data
+                    return StreamingResponse(
+                        generate(),
+                        media_type="model/gltf-binary",
+                        headers={"Content-Disposition": "attachment; filename=output.glb"}
+                    )
                 
         except Exception as e:
             cleanup_cuda_memory()
@@ -1525,7 +1649,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Depth Anything 3 Backend Server")
     parser.add_argument("--model-dir", required=True, help="Model directory path")
     parser.add_argument("--device", default="cuda", help="Device to use")
-    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument("--gallery-dir", help="Gallery directory path (optional)")
 
