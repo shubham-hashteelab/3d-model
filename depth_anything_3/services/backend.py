@@ -1344,7 +1344,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     export_format="glb",
                     process_res_method="upper_bound_resize",  # low_res
                     conf_thresh_percentile=10,  # Default from gradio
-                    num_max_points=500000,  # Reduced for smaller file size
+                    num_max_points=500000,  # 5 lakh points
                     show_cameras=True,  # Default from gradio
                 )
                 
