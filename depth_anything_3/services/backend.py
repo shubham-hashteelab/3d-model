@@ -1344,7 +1344,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     export_format="glb",
                     process_res_method="upper_bound_resize",  # low_res
                     conf_thresh_percentile=10,  # Default from gradio
-                    num_max_points=10000000,  # Default from gradio - increased for higher quality
+                    num_max_points=500000,  # Reduced for smaller file size
                     show_cameras=True,  # Default from gradio
                 )
                 
@@ -1354,7 +1354,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     prediction,
                     export_dir=temp_dir,
                     conf_thresh_percentile=10,
-                    num_max_points=10000000,
+                    num_max_points=500000,
                     show_cameras=True,
                     filter_black_bg=False,
                     filter_white_bg=False,
@@ -1588,7 +1588,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     "process_res": 504,
                     "process_res_method": "upper_bound_resize",
                     "conf_thresh_percentile": 10.0,
-                    "num_max_points": 10000000,
+                    "num_max_points": 500000,
                     "show_cameras": true
                 }
                 {
@@ -1667,7 +1667,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                         process_res = message.get("process_res", 504)
                         process_res_method = message.get("process_res_method", "upper_bound_resize")
                         conf_thresh_percentile = message.get("conf_thresh_percentile", 10.0)
-                        num_max_points = message.get("num_max_points", 10_000_000)
+                        num_max_points = message.get("num_max_points", 500_000)
                         show_cameras = message.get("show_cameras", True)
                         auto_generate_after = message.get("auto_generate_after", 0)
 
