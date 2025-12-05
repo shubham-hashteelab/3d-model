@@ -52,7 +52,7 @@ def get_conf_thresh(
 def export_to_glb(
     prediction: Prediction,
     export_dir: str,
-    num_max_points: int = 500_000,
+    num_max_points: int = 100_000,
     conf_thresh: float = 1.05,
     filter_black_bg: bool = False,
     filter_white_bg: bool = False,

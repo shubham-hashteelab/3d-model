@@ -57,7 +57,7 @@ class WebSocketSession:
     process_res: int = 504
     process_res_method: str = "upper_bound_resize"
     conf_thresh_percentile: float = 10.0
-    num_max_points: int = 500_000
+    num_max_points: int = 100_000
     show_cameras: bool = True
 
     # Auto-generation settings
