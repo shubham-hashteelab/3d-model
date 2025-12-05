@@ -24,6 +24,7 @@ import time
 import uuid
 import tempfile
 import io
+import base64
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
@@ -32,11 +33,12 @@ import numpy as np
 import cv2
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from PIL import Image
+import json
 
 from ..api import DepthAnything3
 from ..utils.memory import (
@@ -46,6 +48,7 @@ from ..utils.memory import (
     estimate_memory_requirement,
 )
 from ..services.input_handlers import VideoHandler, ImageHandler
+from ..services.websocket_session import WebSocketSessionManager, get_session_manager
 
 
 class InferenceRequest(BaseModel):
@@ -590,6 +593,25 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
 
     # Store gallery directory globally for use in routes
     _gallery_dir = gallery_dir
+
+    # Setup WebSocket session cleanup task
+    @_app.on_event("startup")
+    async def startup_event():
+        """Initialize background tasks on startup."""
+        import asyncio
+        session_manager = get_session_manager()
+        # Start cleanup task in background
+        asyncio.create_task(session_manager.start_cleanup_task(interval=300.0))
+        print("[WebSocket] Session cleanup task started (interval: 300s)")
+
+    @_app.on_event("shutdown")
+    async def shutdown_event():
+        """Cleanup on shutdown."""
+        session_manager = get_session_manager()
+        # Cleanup all sessions
+        for session_id in list(session_manager.sessions.keys()):
+            session_manager.delete_session(session_id)
+        print("[WebSocket] All sessions cleaned up")
 
     @_app.get("/", response_class=HTMLResponse)
     async def root():
@@ -1547,6 +1569,444 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             return {"message": "Model reloaded successfully"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to reload model: {str(e)}")
+
+    # ============================================================================
+    # WebSocket routes for real-time 3D reconstruction
+    # ============================================================================
+
+    session_manager = get_session_manager()
+
+    @_app.post("/ws/session/create")
+    async def create_websocket_session(
+        max_images: int = 100,
+        process_res: int = 504,
+        process_res_method: str = "upper_bound_resize",
+        conf_thresh_percentile: float = 10.0,
+        num_max_points: int = 10_000_000,
+        show_cameras: bool = True,
+    ):
+        """Create a new WebSocket session for incremental 3D reconstruction.
+        
+        Returns:
+            Session information including session_id
+        """
+        try:
+            session = session_manager.create_session(
+                max_images=max_images,
+                process_res=process_res,
+                process_res_method=process_res_method,
+                conf_thresh_percentile=conf_thresh_percentile,
+                num_max_points=num_max_points,
+                show_cameras=show_cameras,
+            )
+            
+            return {
+                "success": True,
+                "session_id": session.session_id,
+                "created_at": session.created_at,
+                "max_images": session.max_images,
+                "config": {
+                    "process_res": session.process_res,
+                    "process_res_method": session.process_res_method,
+                    "conf_thresh_percentile": session.conf_thresh_percentile,
+                    "num_max_points": session.num_max_points,
+                    "show_cameras": session.show_cameras,
+                }
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+
+    @_app.get("/ws/session/{session_id}")
+    async def get_websocket_session(session_id: str):
+        """Get session information."""
+        session = session_manager.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return {
+            "session_id": session.session_id,
+            "created_at": session.created_at,
+            "last_activity": session.last_activity,
+            "status": session.status,
+            "image_count": session.image_count,
+            "max_images": session.max_images,
+            "error_message": session.error_message,
+        }
+
+    @_app.delete("/ws/session/{session_id}")
+    async def delete_websocket_session(session_id: str):
+        """Delete a WebSocket session and cleanup resources."""
+        success = session_manager.delete_session(session_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        return {"success": True, "message": f"Session {session_id} deleted"}
+
+    @_app.get("/ws/sessions")
+    async def list_websocket_sessions():
+        """List all WebSocket sessions and statistics."""
+        stats = session_manager.get_stats()
+        sessions = [
+            {
+                "session_id": s.session_id,
+                "created_at": s.created_at,
+                "last_activity": s.last_activity,
+                "status": s.status,
+                "image_count": s.image_count,
+            }
+            for s in session_manager.sessions.values()
+        ]
+        
+        return {
+            "stats": stats,
+            "sessions": sessions,
+        }
+
+    @_app.websocket("/ws/reconstruct/{session_id}")
+    async def websocket_reconstruct(websocket: WebSocket, session_id: str):
+        """WebSocket endpoint for real-time 3D reconstruction.
+        
+        Protocol:
+            Client -> Server:
+                {
+                    "type": "image",
+                    "data": "base64_encoded_image_data",
+                    "filename": "optional_filename.png"
+                }
+                {
+                    "type": "generate",
+                    "incremental": true/false
+                }
+                {
+                    "type": "finalize"
+                }
+            
+            Server -> Client:
+                {
+                    "type": "ack",
+                    "image_count": 5,
+                    "session_id": "..."
+                }
+                {
+                    "type": "progress",
+                    "stage": "processing",
+                    "progress": 0.5,
+                    "message": "Processing frame 5/10"
+                }
+                {
+                    "type": "delta",
+                    "points_added": 1000,
+                    "total_points": 5000,
+                    "glb_base64": "..."  # incremental GLB data
+                }
+                {
+                    "type": "complete",
+                    "glb_base64": "...",  # final GLB
+                    "metadata": {...}
+                }
+                {
+                    "type": "error",
+                    "message": "..."
+                }
+        """
+        await websocket.accept()
+        
+        # Get session
+        session = session_manager.get_session(session_id)
+        if not session:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Session {session_id} not found"
+            })
+            await websocket.close()
+            return
+        
+        try:
+            # Send initial acknowledgment
+            await websocket.send_json({
+                "type": "connected",
+                "session_id": session_id,
+                "image_count": session.image_count,
+                "max_images": session.max_images,
+            })
+            
+            while True:
+                # Receive message from client
+                try:
+                    data = await websocket.receive_text()
+                    message = json.loads(data)
+                except WebSocketDisconnect:
+                    print(f"[WebSocket] Client disconnected from session {session_id}")
+                    break
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Invalid message format: {str(e)}"
+                    })
+                    continue
+                
+                msg_type = message.get("type")
+                
+                if msg_type == "image":
+                    # Handle image upload
+                    try:
+                        image_data_b64 = message.get("data")
+                        if not image_data_b64:
+                            raise ValueError("Missing 'data' field")
+                        
+                        # Decode base64 image
+                        image_data = base64.b64decode(image_data_b64)
+                        filename = message.get("filename")
+                        
+                        # Add image to session
+                        image_path = session.add_image(image_data, filename)
+                        
+                        # Send acknowledgment
+                        await websocket.send_json({
+                            "type": "ack",
+                            "image_count": session.image_count,
+                            "session_id": session_id,
+                            "image_path": os.path.basename(image_path),
+                        })
+                        
+                    except Exception as e:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Failed to process image: {str(e)}"
+                        })
+                
+                elif msg_type == "generate":
+                    # Generate point cloud (incremental or full)
+                    incremental = message.get("incremental", False)
+                    
+                    if session.image_count == 0:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No images in session"
+                        })
+                        continue
+                    
+                    try:
+                        session.status = "processing"
+                        
+                        # Send progress update
+                        await websocket.send_json({
+                            "type": "progress",
+                            "stage": "loading_model",
+                            "progress": 0.1,
+                            "message": "Loading model..."
+                        })
+                        
+                        # Get model
+                        model = _backend.get_model()
+                        
+                        # Send progress update
+                        await websocket.send_json({
+                            "type": "progress",
+                            "stage": "inference",
+                            "progress": 0.3,
+                            "message": f"Processing {session.image_count} images..."
+                        })
+                        
+                        # Run inference
+                        prediction = model.inference(
+                            image=session.image_paths,
+                            export_dir=None,
+                            export_format="glb",
+                            process_res=session.process_res,
+                            process_res_method=session.process_res_method,
+                            conf_thresh_percentile=session.conf_thresh_percentile,
+                            num_max_points=session.num_max_points,
+                            show_cameras=session.show_cameras,
+                        )
+                        
+                        # Send progress update
+                        await websocket.send_json({
+                            "type": "progress",
+                            "stage": "exporting",
+                            "progress": 0.7,
+                            "message": "Generating 3D model..."
+                        })
+                        
+                        # Generate GLB
+                        from ..utils.export.glb import export_to_glb
+                        glb_path = export_to_glb(
+                            prediction,
+                            export_dir=session.temp_dir,
+                            conf_thresh_percentile=session.conf_thresh_percentile,
+                            num_max_points=session.num_max_points,
+                            show_cameras=session.show_cameras,
+                            filter_black_bg=False,
+                            filter_white_bg=False,
+                        )
+                        
+                        # Read GLB file
+                        with open(glb_path, "rb") as f:
+                            glb_data = f.read()
+                        glb_base64 = base64.b64encode(glb_data).decode('utf-8')
+                        
+                        # Extract metadata
+                        metadata = {
+                            "num_frames": session.image_count,
+                            "session_id": session_id,
+                            "glb_size_bytes": len(glb_data),
+                        }
+                        
+                        # Add camera parameters if available
+                        if hasattr(prediction, 'intrinsics') and prediction.intrinsics is not None:
+                            intrinsics = prediction.intrinsics
+                            if hasattr(intrinsics, 'cpu'):
+                                intrinsics = intrinsics.cpu().numpy()
+                            metadata["intrinsics"] = intrinsics.tolist()
+                        
+                        if hasattr(prediction, 'extrinsics') and prediction.extrinsics is not None:
+                            extrinsics = prediction.extrinsics
+                            if hasattr(extrinsics, 'cpu'):
+                                extrinsics = extrinsics.cpu().numpy()
+                            metadata["extrinsics"] = extrinsics.tolist()
+                        
+                        # Send result
+                        if incremental:
+                            await websocket.send_json({
+                                "type": "delta",
+                                "image_count": session.image_count,
+                                "glb_base64": glb_base64,
+                                "metadata": metadata,
+                            })
+                        else:
+                            await websocket.send_json({
+                                "type": "complete",
+                                "image_count": session.image_count,
+                                "glb_base64": glb_base64,
+                                "metadata": metadata,
+                            })
+                        
+                        session.status = "active"
+                        cleanup_cuda_memory()
+                        
+                    except Exception as e:
+                        session.status = "error"
+                        session.error_message = str(e)
+                        cleanup_cuda_memory()
+                        
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Failed to generate point cloud: {str(e)}"
+                        })
+                
+                elif msg_type == "finalize":
+                    # Finalize session (same as generate but marks session as completed)
+                    try:
+                        # Generate final GLB
+                        if session.image_count == 0:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "No images in session"
+                            })
+                            continue
+                        
+                        session.status = "processing"
+                        
+                        await websocket.send_json({
+                            "type": "progress",
+                            "stage": "finalizing",
+                            "progress": 0.1,
+                            "message": "Generating final 3D model..."
+                        })
+                        
+                        model = _backend.get_model()
+                        
+                        prediction = model.inference(
+                            image=session.image_paths,
+                            export_dir=None,
+                            export_format="glb",
+                            process_res=session.process_res,
+                            process_res_method=session.process_res_method,
+                            conf_thresh_percentile=session.conf_thresh_percentile,
+                            num_max_points=session.num_max_points,
+                            show_cameras=session.show_cameras,
+                        )
+                        
+                        from ..utils.export.glb import export_to_glb
+                        glb_path = export_to_glb(
+                            prediction,
+                            export_dir=session.temp_dir,
+                            conf_thresh_percentile=session.conf_thresh_percentile,
+                            num_max_points=session.num_max_points,
+                            show_cameras=session.show_cameras,
+                            filter_black_bg=False,
+                            filter_white_bg=False,
+                        )
+                        
+                        with open(glb_path, "rb") as f:
+                            glb_data = f.read()
+                        glb_base64 = base64.b64encode(glb_data).decode('utf-8')
+                        
+                        metadata = {
+                            "num_frames": session.image_count,
+                            "session_id": session_id,
+                            "glb_size_bytes": len(glb_data),
+                        }
+                        
+                        if hasattr(prediction, 'intrinsics') and prediction.intrinsics is not None:
+                            intrinsics = prediction.intrinsics
+                            if hasattr(intrinsics, 'cpu'):
+                                intrinsics = intrinsics.cpu().numpy()
+                            metadata["intrinsics"] = intrinsics.tolist()
+                        
+                        if hasattr(prediction, 'extrinsics') and prediction.extrinsics is not None:
+                            extrinsics = prediction.extrinsics
+                            if hasattr(extrinsics, 'cpu'):
+                                extrinsics = extrinsics.cpu().numpy()
+                            metadata["extrinsics"] = extrinsics.tolist()
+                        
+                        await websocket.send_json({
+                            "type": "complete",
+                            "image_count": session.image_count,
+                            "glb_base64": glb_base64,
+                            "metadata": metadata,
+                        })
+                        
+                        session.status = "completed"
+                        cleanup_cuda_memory()
+                        
+                    except Exception as e:
+                        session.status = "error"
+                        session.error_message = str(e)
+                        cleanup_cuda_memory()
+                        
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Failed to finalize: {str(e)}"
+                        })
+                
+                elif msg_type == "ping":
+                    # Keep-alive ping
+                    await websocket.send_json({
+                        "type": "pong",
+                        "session_id": session_id,
+                    })
+                
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Unknown message type: {msg_type}"
+                    })
+        
+        except WebSocketDisconnect:
+            print(f"[WebSocket] Session {session_id} disconnected")
+        except Exception as e:
+            print(f"[WebSocket] Error in session {session_id}: {e}")
+            try:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": str(e)
+                })
+            except:
+                pass
+        finally:
+            # Don't auto-cleanup session on disconnect - user might reconnect
+            session.update_activity()
 
     # ============================================================================
     # Gallery routes

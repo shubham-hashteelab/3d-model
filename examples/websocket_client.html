@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Reconstruction WebSocket Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        input[type="file"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .status-line {
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .status-line.error {
+            color: #e74c3c;
+        }
+
+        .status-line.success {
+            color: #27ae60;
+        }
+
+        .status-line.info {
+            color: #3498db;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .preview-item {
+            position: relative;
+            padding-top: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+
+        .preview-item img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .session-info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 13px;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #27ae60;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .download-link:hover {
+            background: #229954;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 3D Reconstruction WebSocket Client</h1>
+        <p class="subtitle">Real-time point cloud generation from images</p>
+
+        <div class="section">
+            <div class="section-title">Server Configuration</div>
+            <div class="input-group">
+                <label for="serverUrl">Server URL:</label>
+                <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Session Configuration</div>
+            <div class="input-group">
+                <label for="maxImages">Max Images:</label>
+                <input type="number" id="maxImages" value="100" min="1" max="1000">
+            </div>
+            <div class="input-group">
+                <label for="processRes">Process Resolution:</label>
+                <input type="number" id="processRes" value="504" min="256" max="2048" step="8">
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Upload Images</div>
+            <input type="file" id="imageInput" accept="image/*" multiple>
+            <div class="preview-grid" id="previewGrid"></div>
+        </div>
+
+        <div class="section">
+            <button id="createSessionBtn" onclick="createSession()">Create Session</button>
+            <button id="sendImagesBtn" onclick="sendImages()" disabled>Send Images</button>
+            <button id="generateBtn" onclick="generate()" disabled>Generate 3D Model</button>
+            <button id="finalizeBtn" onclick="finalize()" disabled>Finalize</button>
+        </div>
+
+        <div id="sessionInfo" class="session-info" style="display: none;">
+            <strong>Session ID:</strong> <span id="sessionId"></span><br>
+            <strong>Status:</strong> <span id="sessionStatus">-</span><br>
+            <strong>Images:</strong> <span id="imageCount">0</span> / <span id="maxImageCount">-</span>
+        </div>
+
+        <div class="progress-bar" style="display: none;" id="progressBar">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+
+        <div class="status" id="statusLog">
+            <div class="status-line info">Ready. Configure server and create a session to begin.</div>
+        </div>
+
+        <div id="downloadSection" style="display: none;">
+            <a id="downloadLink" class="download-link" download="model.glb">📥 Download GLB Model</a>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let websocket = null;
+        let selectedFiles = [];
+        let receivedGLB = null;
+
+        const log = (message, type = 'info') => {
+            const statusLog = document.getElementById('statusLog');
+            const line = document.createElement('div');
+            line.className = `status-line ${type}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            statusLog.appendChild(line);
+            statusLog.scrollTop = statusLog.scrollHeight;
+        };
+
+        const setProgress = (progress) => {
+            const progressBar = document.getElementById('progressBar');
+            const progressBarFill = document.getElementById('progressBarFill');
+            
+            if (progress === null) {
+                progressBar.style.display = 'none';
+            } else {
+                progressBar.style.display = 'block';
+                progressBarFill.style.width = `${progress * 100}%`;
+            }
+        };
+
+        const updateButtons = () => {
+            const hasSession = sessionId !== null;
+            const hasImages = selectedFiles.length > 0;
+            
+            document.getElementById('createSessionBtn').disabled = hasSession;
+            document.getElementById('sendImagesBtn').disabled = !hasSession || !hasImages;
+            document.getElementById('generateBtn').disabled = !hasSession;
+            document.getElementById('finalizeBtn').disabled = !hasSession;
+        };
+
+        // Image file preview
+        document.getElementById('imageInput').addEventListener('change', (e) => {
+            selectedFiles = Array.from(e.target.files);
+            const previewGrid = document.getElementById('previewGrid');
+            previewGrid.innerHTML = '';
+            
+            selectedFiles.forEach((file, i) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const div = document.createElement('div');
+                    div.className = 'preview-item';
+                    div.innerHTML = `<img src="${e.target.result}" alt="Image ${i+1}">`;
+                    previewGrid.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            });
+            
+            log(`Selected ${selectedFiles.length} images`, 'info');
+            updateButtons();
+        });
+
+        async function createSession() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const maxImages = parseInt(document.getElementById('maxImages').value);
+            const processRes = parseInt(document.getElementById('processRes').value);
+
+            try {
+                log('Creating session...', 'info');
+                
+                const response = await fetch(`${serverUrl}/ws/session/create?max_images=${maxImages}&process_res=${processRes}`, {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                
+                log(`Session created: ${sessionId}`, 'success');
+                
+                document.getElementById('sessionInfo').style.display = 'block';
+                document.getElementById('sessionId').textContent = sessionId;
+                document.getElementById('sessionStatus').textContent = 'active';
+                document.getElementById('maxImageCount').textContent = data.max_images;
+                
+                updateButtons();
+            } catch (error) {
+                log(`Failed to create session: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendImages() {
+            if (!sessionId || selectedFiles.length === 0) {
+                log('No session or images selected', 'error');
+                return;
+            }
+
+            const serverUrl = document.getElementById('serverUrl').value;
+            const wsUrl = serverUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+
+            try {
+                log('Connecting to WebSocket...', 'info');
+                websocket = new WebSocket(`${wsUrl}/ws/reconstruct/${sessionId}`);
+
+                websocket.onopen = async () => {
+                    log('WebSocket connected', 'success');
+                };
+
+                websocket.onmessage = async (event) => {
+                    const msg = JSON.parse(event.data);
+                    handleWebSocketMessage(msg);
+                };
+
+                websocket.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                };
+
+                websocket.onclose = () => {
+                    log('WebSocket disconnected', 'info');
+                };
+
+                // Wait for connection
+                await new Promise((resolve) => {
+                    websocket.addEventListener('message', function handler(event) {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'connected') {
+                            websocket.removeEventListener('message', handler);
+                            resolve();
+                        }
+                    });
+                });
+
+                // Send images
+                log(`Sending ${selectedFiles.length} images...`, 'info');
+                setProgress(0);
+
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const reader = new FileReader();
+                    
+                    await new Promise((resolve, reject) => {
+                        reader.onload = async (e) => {
+                            const base64 = e.target.result.split(',')[1];
+                            
+                            websocket.send(JSON.stringify({
+                                type: 'image',
+                                data: base64,
+                                filename: file.name
+                            }));
+                            
+                            // Wait for ack
+                            const ackHandler = (event) => {
+                                const msg = JSON.parse(event.data);
+                                if (msg.type === 'ack') {
+                                    websocket.removeEventListener('message', ackHandler);
+                                    setProgress((i + 1) / selectedFiles.length);
+                                    resolve();
+                                } else if (msg.type === 'error') {
+                                    websocket.removeEventListener('message', ackHandler);
+                                    reject(new Error(msg.message));
+                                }
+                            };
+                            websocket.addEventListener('message', ackHandler);
+                        };
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+                }
+
+                setProgress(null);
+                log(`All images sent successfully`, 'success');
+                document.getElementById('imageCount').textContent = selectedFiles.length;
+
+            } catch (error) {
+                log(`Failed to send images: ${error.message}`, 'error');
+                setProgress(null);
+            }
+        }
+
+        async function generate() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected. Please send images first.', 'error');
+                return;
+            }
+
+            log('Requesting 3D generation...', 'info');
+            websocket.send(JSON.stringify({
+                type: 'generate',
+                incremental: true
+            }));
+        }
+
+        async function finalize() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected. Please send images first.', 'error');
+                return;
+            }
+
+            log('Finalizing session...', 'info');
+            websocket.send(JSON.dumps({
+                type: 'finalize'
+            }));
+        }
+
+        function handleWebSocketMessage(msg) {
+            switch (msg.type) {
+                case 'connected':
+                    log(`Connected to session ${msg.session_id}`, 'success');
+                    break;
+
+                case 'ack':
+                    // Handled in sendImages
+                    break;
+
+                case 'progress':
+                    const progress = msg.progress || 0;
+                    const stage = msg.stage || 'processing';
+                    const message = msg.message || '';
+                    log(`[${stage}] ${(progress * 100).toFixed(1)}% - ${message}`, 'info');
+                    setProgress(progress);
+                    break;
+
+                case 'delta':
+                    const deltaSize = msg.metadata?.glb_size_bytes || 0;
+                    log(`Received delta update (${(deltaSize / 1024).toFixed(1)} KB)`, 'success');
+                    
+                    if (msg.glb_base64) {
+                        receivedGLB = base64ToBlob(msg.glb_base64, 'model/gltf-binary');
+                        showDownloadLink();
+                    }
+                    setProgress(null);
+                    break;
+
+                case 'complete':
+                    const completeSize = msg.metadata?.glb_size_bytes || 0;
+                    log(`✅ Reconstruction complete! (${(completeSize / 1024).toFixed(1)} KB)`, 'success');
+                    
+                    if (msg.glb_base64) {
+                        receivedGLB = base64ToBlob(msg.glb_base64, 'model/gltf-binary');
+                        showDownloadLink();
+                    }
+                    
+                    document.getElementById('sessionStatus').textContent = 'completed';
+                    setProgress(null);
+                    break;
+
+                case 'error':
+                    log(`❌ Error: ${msg.message}`, 'error');
+                    setProgress(null);
+                    break;
+
+                case 'pong':
+                    // Keep-alive response
+                    break;
+
+                default:
+                    log(`Unknown message type: ${msg.type}`, 'info');
+            }
+        }
+
+        function base64ToBlob(base64, mimeType) {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: mimeType });
+        }
+
+        function showDownloadLink() {
+            if (!receivedGLB) return;
+            
+            const downloadSection = document.getElementById('downloadSection');
+            const downloadLink = document.getElementById('downloadLink');
+            
+            const url = URL.createObjectURL(receivedGLB);
+            downloadLink.href = url;
+            downloadSection.style.display = 'block';
+            
+            log('Download link ready', 'success');
+        }
+
+        // Initialize
+        updateButtons();
+    </script>
+</body>
+</html>
+
