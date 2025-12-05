@@ -59,6 +59,10 @@ class WebSocketSession:
     conf_thresh_percentile: float = 10.0
     num_max_points: int = 10_000_000
     show_cameras: bool = True
+
+    # Auto-generation settings
+    auto_generate_after: int = 0  # 0 = disabled, N = generate after N images
+    last_auto_generate_count: int = 0  # Track when we last auto-generated
     
     def __post_init__(self):
         """Initialize temporary directory."""

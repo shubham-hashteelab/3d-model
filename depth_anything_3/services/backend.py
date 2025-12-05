@@ -1669,7 +1669,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                         conf_thresh_percentile = message.get("conf_thresh_percentile", 10.0)
                         num_max_points = message.get("num_max_points", 10_000_000)
                         show_cameras = message.get("show_cameras", True)
-                        
+                        auto_generate_after = message.get("auto_generate_after", 0)
+
                         session = session_manager.create_session(
                             max_images=max_images,
                             process_res=process_res,
@@ -1677,9 +1678,10 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                             conf_thresh_percentile=conf_thresh_percentile,
                             num_max_points=num_max_points,
                             show_cameras=show_cameras,
+                            auto_generate_after=auto_generate_after,
                         )
                         session_id = session.session_id
-                        
+
                         await websocket.send_json({
                             "type": "session_created",
                             "session_id": session_id,
@@ -1690,11 +1692,12 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                                 "conf_thresh_percentile": session.conf_thresh_percentile,
                                 "num_max_points": session.num_max_points,
                                 "show_cameras": session.show_cameras,
+                                "auto_generate_after": session.auto_generate_after,
                             }
                         })
-                        
-                        print(f"[WebSocket] Session created: {session_id}")
-                        
+
+                        print(f"[WebSocket] Session created: {session_id} (auto_generate_after={auto_generate_after})")
+
                     except Exception as e:
                         await websocket.send_json({
                             "type": "error",
@@ -1709,19 +1712,19 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                             "message": "No session initialized. Send 'init' message first."
                         })
                         continue
-                    
+
                     try:
                         image_data_b64 = message.get("data")
                         if not image_data_b64:
                             raise ValueError("Missing 'data' field")
-                        
+
                         # Decode base64 image
                         image_data = base64.b64decode(image_data_b64)
                         filename = message.get("filename")
-                        
+
                         # Add image to session
                         image_path = session.add_image(image_data, filename)
-                        
+
                         # Send acknowledgment
                         await websocket.send_json({
                             "type": "ack",
@@ -1729,7 +1732,104 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                             "session_id": session_id,
                             "image_path": os.path.basename(image_path),
                         })
-                        
+
+                        # Check for auto-generation trigger
+                        if (session.auto_generate_after > 0 and
+                            session.image_count >= session.auto_generate_after and
+                            session.image_count > session.last_auto_generate_count and
+                            session.status != "processing"):
+
+                            # Check if we have enough new images since last generation
+                            images_since_last = session.image_count - session.last_auto_generate_count
+                            if images_since_last >= session.auto_generate_after:
+                                print(f"[WebSocket] Auto-generating after {session.image_count} images")
+                                session.last_auto_generate_count = session.image_count
+
+                                # Notify client
+                                await websocket.send_json({
+                                    "type": "auto_generating",
+                                    "image_count": session.image_count,
+                                    "message": f"Auto-generating after {session.image_count} images"
+                                })
+
+                                # Trigger generation (inline to avoid code duplication)
+                                try:
+                                    session.status = "processing"
+
+                                    await websocket.send_json({
+                                        "type": "progress",
+                                        "stage": "loading_model",
+                                        "progress": 0.1,
+                                        "message": "Loading model..."
+                                    })
+
+                                    model = _backend.get_model()
+
+                                    await websocket.send_json({
+                                        "type": "progress",
+                                        "stage": "inference",
+                                        "progress": 0.3,
+                                        "message": f"Processing {session.image_count} images..."
+                                    })
+
+                                    prediction = model.inference(
+                                        image=session.image_paths,
+                                        export_dir=None,
+                                        export_format="glb",
+                                        process_res=session.process_res,
+                                        process_res_method=session.process_res_method,
+                                        conf_thresh_percentile=session.conf_thresh_percentile,
+                                        num_max_points=session.num_max_points,
+                                        show_cameras=session.show_cameras,
+                                    )
+
+                                    await websocket.send_json({
+                                        "type": "progress",
+                                        "stage": "exporting",
+                                        "progress": 0.7,
+                                        "message": "Generating 3D model..."
+                                    })
+
+                                    from ..utils.export.glb import export_to_glb
+                                    glb_path = export_to_glb(
+                                        prediction,
+                                        export_dir=session.temp_dir,
+                                        conf_thresh_percentile=session.conf_thresh_percentile,
+                                        num_max_points=session.num_max_points,
+                                        show_cameras=session.show_cameras,
+                                        filter_black_bg=False,
+                                        filter_white_bg=False,
+                                    )
+
+                                    with open(glb_path, "rb") as f:
+                                        glb_data = f.read()
+                                    glb_base64 = base64.b64encode(glb_data).decode('utf-8')
+
+                                    metadata = {
+                                        "num_frames": session.image_count,
+                                        "session_id": session_id,
+                                        "glb_size_bytes": len(glb_data),
+                                        "auto_generated": True,
+                                    }
+
+                                    await websocket.send_json({
+                                        "type": "delta",
+                                        "image_count": session.image_count,
+                                        "glb_base64": glb_base64,
+                                        "metadata": metadata,
+                                    })
+
+                                    session.status = "active"
+                                    cleanup_cuda_memory()
+
+                                except Exception as e:
+                                    session.status = "active"  # Reset to active so more images can be added
+                                    cleanup_cuda_memory()
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "message": f"Auto-generation failed: {str(e)}"
+                                    })
+
                     except Exception as e:
                         await websocket.send_json({
                             "type": "error",
