@@ -1576,98 +1576,21 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
 
     session_manager = get_session_manager()
 
-    @_app.post("/ws/session/create")
-    async def create_websocket_session(
-        max_images: int = 100,
-        process_res: int = 504,
-        process_res_method: str = "upper_bound_resize",
-        conf_thresh_percentile: float = 10.0,
-        num_max_points: int = 10_000_000,
-        show_cameras: bool = True,
-    ):
-        """Create a new WebSocket session for incremental 3D reconstruction.
-        
-        Returns:
-            Session information including session_id
-        """
-        try:
-            session = session_manager.create_session(
-                max_images=max_images,
-                process_res=process_res,
-                process_res_method=process_res_method,
-                conf_thresh_percentile=conf_thresh_percentile,
-                num_max_points=num_max_points,
-                show_cameras=show_cameras,
-            )
-            
-            return {
-                "success": True,
-                "session_id": session.session_id,
-                "created_at": session.created_at,
-                "max_images": session.max_images,
-                "config": {
-                    "process_res": session.process_res,
-                    "process_res_method": session.process_res_method,
-                    "conf_thresh_percentile": session.conf_thresh_percentile,
-                    "num_max_points": session.num_max_points,
-                    "show_cameras": session.show_cameras,
-                }
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
-
-    @_app.get("/ws/session/{session_id}")
-    async def get_websocket_session(session_id: str):
-        """Get session information."""
-        session = session_manager.get_session(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        return {
-            "session_id": session.session_id,
-            "created_at": session.created_at,
-            "last_activity": session.last_activity,
-            "status": session.status,
-            "image_count": session.image_count,
-            "max_images": session.max_images,
-            "error_message": session.error_message,
-        }
-
-    @_app.delete("/ws/session/{session_id}")
-    async def delete_websocket_session(session_id: str):
-        """Delete a WebSocket session and cleanup resources."""
-        success = session_manager.delete_session(session_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        return {"success": True, "message": f"Session {session_id} deleted"}
-
-    @_app.get("/ws/sessions")
-    async def list_websocket_sessions():
-        """List all WebSocket sessions and statistics."""
-        stats = session_manager.get_stats()
-        sessions = [
-            {
-                "session_id": s.session_id,
-                "created_at": s.created_at,
-                "last_activity": s.last_activity,
-                "status": s.status,
-                "image_count": s.image_count,
-            }
-            for s in session_manager.sessions.values()
-        ]
-        
-        return {
-            "stats": stats,
-            "sessions": sessions,
-        }
-
-    @_app.websocket("/ws/reconstruct/{session_id}")
-    async def websocket_reconstruct(websocket: WebSocket, session_id: str):
+    @_app.websocket("/ws/reconstruct")
+    async def websocket_reconstruct(websocket: WebSocket):
         """WebSocket endpoint for real-time 3D reconstruction.
         
         Protocol:
             Client -> Server:
+                {
+                    "type": "init",
+                    "max_images": 100,
+                    "process_res": 504,
+                    "process_res_method": "upper_bound_resize",
+                    "conf_thresh_percentile": 10.0,
+                    "num_max_points": 10000000,
+                    "show_cameras": true
+                }
                 {
                     "type": "image",
                     "data": "base64_encoded_image_data",
@@ -1683,6 +1606,12 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             
             Server -> Client:
                 {
+                    "type": "session_created",
+                    "session_id": "...",
+                    "max_images": 100,
+                    "config": {...}
+                }
+                {
                     "type": "ack",
                     "image_count": 5,
                     "session_id": "..."
@@ -1695,13 +1624,12 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 }
                 {
                     "type": "delta",
-                    "points_added": 1000,
-                    "total_points": 5000,
-                    "glb_base64": "..."  # incremental GLB data
+                    "image_count": 5,
+                    "glb_base64": "..."
                 }
                 {
                     "type": "complete",
-                    "glb_base64": "...",  # final GLB
+                    "glb_base64": "...",
                     "metadata": {...}
                 }
                 {
@@ -1711,32 +1639,17 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         """
         await websocket.accept()
         
-        # Get session
-        session = session_manager.get_session(session_id)
-        if not session:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Session {session_id} not found"
-            })
-            await websocket.close()
-            return
+        session = None
+        session_id = None
         
         try:
-            # Send initial acknowledgment
-            await websocket.send_json({
-                "type": "connected",
-                "session_id": session_id,
-                "image_count": session.image_count,
-                "max_images": session.max_images,
-            })
-            
             while True:
                 # Receive message from client
                 try:
                     data = await websocket.receive_text()
                     message = json.loads(data)
                 except WebSocketDisconnect:
-                    print(f"[WebSocket] Client disconnected from session {session_id}")
+                    print(f"[WebSocket] Client disconnected" + (f" from session {session_id}" if session_id else ""))
                     break
                 except Exception as e:
                     await websocket.send_json({
@@ -1747,8 +1660,56 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 
                 msg_type = message.get("type")
                 
-                if msg_type == "image":
+                if msg_type == "init":
+                    # Initialize session
+                    try:
+                        max_images = message.get("max_images", 100)
+                        process_res = message.get("process_res", 504)
+                        process_res_method = message.get("process_res_method", "upper_bound_resize")
+                        conf_thresh_percentile = message.get("conf_thresh_percentile", 10.0)
+                        num_max_points = message.get("num_max_points", 10_000_000)
+                        show_cameras = message.get("show_cameras", True)
+                        
+                        session = session_manager.create_session(
+                            max_images=max_images,
+                            process_res=process_res,
+                            process_res_method=process_res_method,
+                            conf_thresh_percentile=conf_thresh_percentile,
+                            num_max_points=num_max_points,
+                            show_cameras=show_cameras,
+                        )
+                        session_id = session.session_id
+                        
+                        await websocket.send_json({
+                            "type": "session_created",
+                            "session_id": session_id,
+                            "max_images": session.max_images,
+                            "config": {
+                                "process_res": session.process_res,
+                                "process_res_method": session.process_res_method,
+                                "conf_thresh_percentile": session.conf_thresh_percentile,
+                                "num_max_points": session.num_max_points,
+                                "show_cameras": session.show_cameras,
+                            }
+                        })
+                        
+                        print(f"[WebSocket] Session created: {session_id}")
+                        
+                    except Exception as e:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Failed to create session: {str(e)}"
+                        })
+                
+                elif msg_type == "image":
                     # Handle image upload
+                    if not session:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No session initialized. Send 'init' message first."
+                        })
+                        continue
+                    
                     try:
                         image_data_b64 = message.get("data")
                         if not image_data_b64:
@@ -1777,6 +1738,13 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 
                 elif msg_type == "generate":
                     # Generate point cloud (incremental or full)
+                    if not session:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No session initialized. Send 'init' message first."
+                        })
+                        continue
+                    
                     incremental = message.get("incremental", False)
                     
                     if session.image_count == 0:
@@ -1896,6 +1864,13 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 
                 elif msg_type == "finalize":
                     # Finalize session (same as generate but marks session as completed)
+                    if not session:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No session initialized. Send 'init' message first."
+                        })
+                        continue
+                    
                     try:
                         # Generate final GLB
                         if session.image_count == 0:
@@ -1994,9 +1969,9 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     })
         
         except WebSocketDisconnect:
-            print(f"[WebSocket] Session {session_id} disconnected")
+            print(f"[WebSocket] Session disconnected" + (f": {session_id}" if session_id else ""))
         except Exception as e:
-            print(f"[WebSocket] Error in session {session_id}: {e}")
+            print(f"[WebSocket] Error" + (f" in session {session_id}" if session_id else "") + f": {e}")
             try:
                 await websocket.send_json({
                     "type": "error",
@@ -2005,8 +1980,12 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             except:
                 pass
         finally:
-            # Don't auto-cleanup session on disconnect - user might reconnect
-            session.update_activity()
+            # Cleanup session on disconnect
+            if session and session_id:
+                session.update_activity()
+                # Auto-delete session after disconnect (client can reconnect by creating new session)
+                session_manager.delete_session(session_id)
+                print(f"[WebSocket] Cleaned up session {session_id}")
 
     # ============================================================================
     # Gallery routes
