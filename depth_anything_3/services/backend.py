@@ -24,6 +24,7 @@ import time
 import uuid
 import tempfile
 import io
+import traceback
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
@@ -1243,6 +1244,137 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             export_dir=request.export_dir,
             export_format=request.export_format,
         )
+    @_app.post("/process-files-with-camera")
+    async def process_files_with_camera(
+        request: Request,
+        files: List[UploadFile] = File(...),
+        intrinsics: str = Form(...),
+        extrinsics: str = Form(...),
+        output_format: str = Form("glb"),
+        include_metadata: bool = Form(False),
+    ):
+        """Process uploaded images with provided camera parameters and return GLB file directly.
+
+        Args:
+            files: Uploaded image files
+            intrinsics: JSON string of camera intrinsics matrices (Nx3x3)
+            extrinsics: JSON string of camera extrinsics matrices (Nx4x4)
+            output_format: Output format - 'glb', 'ply', or 'json'
+            include_metadata: If True, returns JSON with model data + camera data
+        """
+        import json
+
+        print(f"[process-files-with-camera] Received {len(files)} files, output_format={output_format}")
+
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+
+        if _backend is None:
+            raise HTTPException(status_code=500, detail="Backend not initialized")
+
+        try:
+            # Parse intrinsics and extrinsics from JSON strings
+            try:
+                intrinsics_data = json.loads(intrinsics)
+                extrinsics_data = json.loads(extrinsics)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+
+            # Convert to numpy arrays
+            intrinsics_array = np.array(intrinsics_data, dtype=np.float32)
+            extrinsics_array = np.array(extrinsics_data, dtype=np.float32)
+
+            print(f"[process-files-with-camera] Intrinsics shape: {intrinsics_array.shape}, Extrinsics shape: {extrinsics_array.shape}")
+
+            # Validate shapes
+            if len(files) != len(extrinsics_array):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Number of images ({len(files)}) must match number of extrinsics matrices ({len(extrinsics_array)})"
+                )
+
+            # Create temporary directory for processing
+            with tempfile.TemporaryDirectory() as temp_dir:
+                processed_images = []
+
+                for file in files:
+                    if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif')):
+                        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
+
+                    file_path = os.path.join(temp_dir, file.filename)
+
+                    # Save uploaded file
+                    with open(file_path, "wb") as f:
+                        content = await file.read()
+                        f.write(content)
+
+                    processed_images.append(file_path)
+                    print(f"[process-files-with-camera] Saved: {file.filename}")
+
+                if not processed_images:
+                    raise HTTPException(status_code=400, detail="No valid images found")
+
+                print(f"[process-files-with-camera] Processing {len(processed_images)} images with camera data")
+
+                # Get model
+                model = _backend.get_model()
+
+                # Run inference with provided camera parameters
+                prediction = model.inference(
+                    image=processed_images,
+                    export_dir=None,
+                    export_format="glb",
+                    intrinsics=intrinsics_array,
+                    extrinsics=extrinsics_array,
+                    process_res_method="upper_bound_resize",
+                    conf_thresh_percentile=10,
+                    num_max_points=10000000,
+                    show_cameras=True,
+                )
+
+                from ..utils.export.glb import export_to_glb
+                glb_path = export_to_glb(
+                    prediction,
+                    export_dir=temp_dir,
+                    conf_thresh_percentile=10,
+                    num_max_points=10000000,
+                    show_cameras=True,
+                    filter_black_bg=False,
+                    filter_white_bg=False,
+                )
+
+                print(f"[process-files-with-camera] GLB generated: {glb_path}")
+
+                # Return GLB file
+                with open(glb_path, "rb") as f:
+                    glb_data = f.read()
+
+                cleanup_cuda_memory()
+
+                def generate():
+                    yield glb_data
+
+                return StreamingResponse(
+                    generate(),
+                    media_type="model/gltf-binary",
+                    headers={"Content-Disposition": "attachment; filename=output.glb"}
+                )
+        except Exception as e:
+            print("========== TRACEBACK START ==========")
+            traceback.print_exc()   # <-- FULL stack trace
+            print("=========== TRACEBACK END ===========")
+
+            cleanup_cuda_memory()
+
+            raise HTTPException(
+                status_code=500,
+            detail=f"Processing failed: {type(e).__name__}: {str(e)}"
+    )
+
+
+        
+
+            
 
     @_app.post("/process-files")
     async def process_files(
