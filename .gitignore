@@ -37,3 +37,4 @@ ENV/
 # Logs
 *.log
 
+da3-venv/

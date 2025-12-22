@@ -1252,6 +1252,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         extrinsics: str = Form(...),
         output_format: str = Form("glb"),
         include_metadata: bool = Form(False),
+        align_poses: bool = Form(False),
+        process_res: int = Form(504)
     ):
         """Process uploaded images with provided camera parameters and return GLB file directly.
 
@@ -1286,12 +1288,44 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
 
             print(f"[process-files-with-camera] Intrinsics shape: {intrinsics_array.shape}, Extrinsics shape: {extrinsics_array.shape}")
 
-            # Validate shapes
+            # Validate counts
             if len(files) != len(extrinsics_array):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Number of images ({len(files)}) must match number of extrinsics matrices ({len(extrinsics_array)})"
                 )
+
+            if len(files) != len(intrinsics_array):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Number of images ({len(files)}) must match number of intrinsics matrices ({len(intrinsics_array)})"
+                )
+
+            # Validate matrix shapes
+            if intrinsics_array.ndim != 3 or intrinsics_array.shape[1:] != (3, 3):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Intrinsics must be Nx3x3, got shape {intrinsics_array.shape}"
+                )
+
+            if extrinsics_array.ndim != 3 or extrinsics_array.shape[1:] != (4, 4):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Extrinsics must be Nx4x4, got shape {extrinsics_array.shape}"
+                )
+
+            # Validate rotation matrices (det(R) should be ~1.0)
+            for i, ext in enumerate(extrinsics_array):
+                R = ext[:3, :3]
+                det = np.linalg.det(R)
+                if abs(det - 1.0) > 0.1:  # Allow small numerical errors
+                    print(f"[WARN] Frame {i}: Rotation determinant = {det:.6f} (expected ~1.0)")
+                    if abs(det + 1.0) < 0.1:  # det ≈ -1 means reflection, likely transposed
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Frame {i}: Invalid rotation matrix (det={det:.6f}). Matrix may be transposed."
+                        )
+
 
             # Create temporary directory for processing
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -1326,6 +1360,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     export_format="glb",
                     intrinsics=intrinsics_array,
                     extrinsics=extrinsics_array,
+                    align_to_input_ext_scale=align_poses,
+                    process_res=process_res,
                     process_res_method="upper_bound_resize",
                     conf_thresh_percentile=10,
                     num_max_points=10000000,
