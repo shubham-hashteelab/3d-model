@@ -1253,7 +1253,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         output_format: str = Form("glb"),
         include_metadata: bool = Form(False),
         align_poses: bool = Form(False),
-        process_res: int = Form(504)
+        process_res: int = Form(504),
     ):
         """Process uploaded images with provided camera parameters and return GLB file directly.
 
@@ -1287,6 +1287,35 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             extrinsics_array = np.array(extrinsics_data, dtype=np.float32)
 
             print(f"[process-files-with-camera] Intrinsics shape: {intrinsics_array.shape}, Extrinsics shape: {extrinsics_array.shape}")
+
+            # ========== DEBUG: VERIFY CAMERA DATA ==========
+            print(f"[VERIFY] ========== CAMERA DATA VERIFICATION ==========")
+            print(f"[VERIFY] Intrinsics received: {intrinsics_array is not None}")
+            print(f"[VERIFY] Extrinsics received: {extrinsics_array is not None}")
+
+            if extrinsics_array is not None:
+                print(f"[VERIFY] Extrinsics shape: {extrinsics_array.shape}")
+                print(f"[VERIFY] First w2c matrix:\n{extrinsics_array[0]}")
+
+                # Check if rotation matrix is valid
+                R = extrinsics_array[0][:3, :3]
+                det_R = np.linalg.det(R)
+                print(f"[VERIFY] Rotation determinant: {det_R:.6f} (should be ~1.0)")
+
+                # Extract camera position in world coordinates
+                # For w2c matrix, camera position = -R^T @ t
+                t = extrinsics_array[0][:3, 3]
+                cam_pos_world = -R.T @ t
+                print(f"[VERIFY] Camera position (world): {cam_pos_world}")
+
+            if intrinsics_array is not None:
+                print(f"[VERIFY] Intrinsics shape: {intrinsics_array.shape}")
+                K = intrinsics_array[0]
+                print(f"[VERIFY] First K matrix:\n{K}")
+                print(f"[VERIFY] fx={K[0,0]:.2f}, fy={K[1,1]:.2f}, cx={K[0,2]:.2f}, cy={K[1,2]:.2f}")
+
+            print(f"[VERIFY] ================================================")
+            # ========== END DEBUG ==========
 
             # Validate counts
             if len(files) != len(extrinsics_array):
@@ -1326,10 +1355,15 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                             detail=f"Frame {i}: Invalid rotation matrix (det={det:.6f}). Matrix may be transposed."
                         )
 
-
             # Create temporary directory for processing
             with tempfile.TemporaryDirectory() as temp_dir:
                 processed_images = []
+
+                # ========== SAVE RECEIVED IMAGES TO DEBUG DIRECTORY ==========
+                # Create a persistent directory to save received images for debugging
+                debug_dir = os.path.join(os.getcwd(), "debug_received_images", f"capture_{int(time.time())}")
+                os.makedirs(debug_dir, exist_ok=True)
+                print(f"[DEBUG] Saving received images to: {debug_dir}")
 
                 for file in files:
                     if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif')):
@@ -1342,8 +1376,41 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                         content = await file.read()
                         f.write(content)
 
+                    # ========== ALSO SAVE TO DEBUG DIRECTORY ==========
+                    debug_file_path = os.path.join(debug_dir, file.filename)
+                    with open(debug_file_path, "wb") as f_debug:
+                        f_debug.write(content)
+                    print(f"[DEBUG] Saved to debug dir: {debug_file_path}")
+
                     processed_images.append(file_path)
                     print(f"[process-files-with-camera] Saved: {file.filename}")
+
+                # ========== SAVE CAMERA DATA TO DEBUG DIRECTORY ==========
+                # Save intrinsics and extrinsics as JSON for inspection
+                camera_data = {
+                    "intrinsics": intrinsics_array.tolist(),
+                    "extrinsics": extrinsics_array.tolist(),
+                    "num_images": len(processed_images),
+                    "image_files": [os.path.basename(p) for p in processed_images]
+                }
+                camera_data_path = os.path.join(debug_dir, "camera_data.json")
+                with open(camera_data_path, "w") as f:
+                    json.dump(camera_data, f, indent=2)
+                print(f"[DEBUG] Saved camera data to: {camera_data_path}")
+
+                # Also save camera poses as a simple text file for quick viewing
+                poses_txt_path = os.path.join(debug_dir, "camera_poses.txt")
+                with open(poses_txt_path, "w") as f:
+                    f.write("Camera Poses (Extrinsics - World to Camera):\n")
+                    f.write("=" * 60 + "\n\n")
+                    for i, ext in enumerate(extrinsics_array):
+                        f.write(f"Frame {i}:\n")
+                        f.write(f"Position (translation): [{ext[0,3]:.4f}, {ext[1,3]:.4f}, {ext[2,3]:.4f}]\n")
+                        f.write(f"Rotation matrix:\n")
+                        for row in range(3):
+                            f.write(f"  [{ext[row,0]:.4f}, {ext[row,1]:.4f}, {ext[row,2]:.4f}]\n")
+                        f.write("\n")
+                print(f"[DEBUG] Saved camera poses to: {poses_txt_path}")
 
                 if not processed_images:
                     raise HTTPException(status_code=400, detail="No valid images found")
@@ -1404,8 +1471,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
 
             raise HTTPException(
                 status_code=500,
-            detail=f"Processing failed: {type(e).__name__}: {str(e)}"
-    )
+                detail=f"Processing failed: {type(e).__name__}: {str(e)}"
+            )
 
 
         
