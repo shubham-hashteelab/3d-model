@@ -1416,7 +1416,27 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     raise HTTPException(status_code=400, detail="No valid images found")
 
                 print(f"[process-files-with-camera] Processing {len(processed_images)} images with camera data")
+                
 
+                centers = []
+                for ext in extrinsics_array:
+                    R = ext[:3,:3]
+                    t = ext[:3,:3]
+                    C = -R.T @ t
+                    centers.append(C)
+                centers = np.array(centers)
+                
+                #Compute mean baseline relative to first frame
+                baseline = np.mean(np.linalg.norm(centers - centers[0], axis=1))
+
+
+                print(f"[SCALE] Mean camera baseline before normalization: {baseline:.6f}")
+                #Normalize translation scale
+                if baseline > 1e-6:
+                    extrinsics_array[:, :3, 3] /= baseline
+                    print("[SCALE] Extrinsics translations normalized (COLMAP-like scale)")
+                else:
+                    print("[SCALE][WARN] Baseline too small — normalization skipped")
                 # Get model
                 model = _backend.get_model()
 
