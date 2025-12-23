@@ -99,59 +99,60 @@ class FileHandler:
         return target_dir, image_paths
 
     def _process_images(self, input_images: List, target_dir_images: str) -> List[str]:
-        """
-        Process uploaded images.
+            """
+            Process uploaded images.
 
-        Args:
-            input_images: List of input image files
-            target_dir_images: Target directory for images
+            Args:
+                input_images: List of input image files
+                target_dir_images: Target directory for images
 
-        Returns:
-            List of processed image paths
-        """
-        image_paths = []
+            Returns:
+                List of processed image paths
+            """
+            image_paths = []
+            for file_item in input_images:
+                # Handle both file paths (strings) and TemporaryFileWrapper objects
+                if hasattr(file_item, 'name'):
+                    # It's a file wrapper object - extract the path
+                    file_path = file_item.name
+                else:
+                    # It's already a string path
+                    file_path = file_item
+                
+                file_ext = os.path.splitext(file_path)[1].lower()
+                
+                if file_ext in [".heic", ".heif"]:
+                    # Convert HEIC to JPEG for better gallery compatibility
+                    try:
+                        with Image.open(file_path) as img:
+                            # Convert to RGB if necessary (HEIC can have different color modes)
+                            if img.mode not in ("RGB", "L"):
+                                img = img.convert("RGB")
 
-        for file_data in input_images:
-            if isinstance(file_data, dict) and "name" in file_data:
-                file_path = file_data["name"]
-            else:
-                file_path = file_data
+                            # Create JPEG filename
+                            base_name = os.path.splitext(os.path.basename(file_path))[0]
+                            dst_path = os.path.join(target_dir_images, f"{base_name}.jpg")
 
-            # Check if the file is a HEIC image
-            file_ext = os.path.splitext(file_path)[1].lower()
-            if file_ext in [".heic", ".heif"]:
-                # Convert HEIC to JPEG for better gallery compatibility
-                try:
-                    with Image.open(file_path) as img:
-                        # Convert to RGB if necessary (HEIC can have different color modes)
-                        if img.mode not in ("RGB", "L"):
-                            img = img.convert("RGB")
-
-                        # Create JPEG filename
-                        base_name = os.path.splitext(os.path.basename(file_path))[0]
-                        dst_path = os.path.join(target_dir_images, f"{base_name}.jpg")
-
-                        # Save as JPEG with high quality
-                        img.save(dst_path, "JPEG", quality=95)
+                            # Save as JPEG with high quality
+                            img.save(dst_path, "JPEG", quality=95)
+                            image_paths.append(dst_path)
+                            print(
+                                f"Converted HEIC to JPEG: {os.path.basename(file_path)} -> "
+                                f"{os.path.basename(dst_path)}"
+                            )
+                    except Exception as e:
+                        print(f"Error converting HEIC file {file_path}: {e}")
+                        # Fall back to copying as is
+                        dst_path = os.path.join(target_dir_images, os.path.basename(file_path))
+                        shutil.copy(file_path, dst_path)
                         image_paths.append(dst_path)
-                        print(
-                            f"Converted HEIC to JPEG: {os.path.basename(file_path)} -> "
-                            f"{os.path.basename(dst_path)}"
-                        )
-                except Exception as e:
-                    print(f"Error converting HEIC file {file_path}: {e}")
-                    # Fall back to copying as is
+                else:
+                    # Regular image files - copy as is
                     dst_path = os.path.join(target_dir_images, os.path.basename(file_path))
                     shutil.copy(file_path, dst_path)
                     image_paths.append(dst_path)
-            else:
-                # Regular image files - copy as is
-                dst_path = os.path.join(target_dir_images, os.path.basename(file_path))
-                shutil.copy(file_path, dst_path)
-                image_paths.append(dst_path)
 
-        return image_paths
-
+            return image_paths
     def _process_video(
         self, input_video: str, target_dir_images: str, s_time_interval: float
     ) -> List[str]:
