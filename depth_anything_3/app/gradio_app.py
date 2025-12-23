@@ -163,7 +163,7 @@ class DepthAnything3App:
             Configured Gradio Blocks interface
         """
 
-        with gr.Blocks() as demo:
+        with gr.Blocks(css=GRADIO_CSS, theme=get_gradio_theme()) as demo:
             # State variables for the tabbed interface
             is_example = gr.Textbox(label="is_example", visible=False, value="None")
             processed_data_state = gr.State(value=None)
@@ -607,7 +607,7 @@ class DepthAnything3App:
         """
         demo = self.create_app()
         demo.queue(max_size=20).launch(
-            show_error=True, ssr_mode=False, server_name=host, server_port=port, theme=get_gradio_theme(), css=GRADIO_CSS, **kwargs
+            show_error=True, server_name=host, server_port=port, **kwargs
         )
 
 
