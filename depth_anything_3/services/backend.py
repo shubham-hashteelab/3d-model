@@ -1324,11 +1324,33 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     detail=f"Number of images ({len(files)}) must match number of extrinsics matrices ({len(extrinsics_array)})"
                 )
 
-            if len(files) != len(intrinsics_array):
+            # ================= INTRINSICS HANDLING =================
+            # Intrinsics are camera-specific, not frame-specific.
+            # Allow either:
+            #   (1, 3, 3) → shared camera intrinsics
+            #   (N, 3, 3) → per-frame intrinsics (rare)
+
+            if intrinsics_array.ndim != 3 or intrinsics_array.shape[1:] != (3, 3):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Number of images ({len(files)}) must match number of intrinsics matrices ({len(intrinsics_array)})"
+                    detail=f"Intrinsics must be Nx3x3, got shape {intrinsics_array.shape}"
                 )
+
+            if intrinsics_array.shape[0] == 1:
+                print(f"[INFO] Using single intrinsics matrix for all {len(files)} frames")
+                intrinsics_array = np.repeat(intrinsics_array, len(files), axis=0)
+
+            elif intrinsics_array.shape[0] != len(files):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Intrinsics must be either 1 matrix (shared camera) "
+                        f"or {len(files)} matrices (one per frame). "
+                        f"Got {intrinsics_array.shape[0]}"
+                    )
+                )
+            # ======================================================
+
 
             # Validate matrix shapes
             if intrinsics_array.ndim != 3 or intrinsics_array.shape[1:] != (3, 3):
@@ -1421,7 +1443,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 centers = []
                 for ext in extrinsics_array:
                     R = ext[:3,:3]
-                    t = ext[:3,:3]
+                    t = ext[:3,3]
                     C = -R.T @ t
                     centers.append(C)
                 centers = np.array(centers)
@@ -1437,6 +1459,30 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     print("[SCALE] Extrinsics translations normalized (COLMAP-like scale)")
                 else:
                     print("[SCALE][WARN] Baseline too small — normalization skipped")
+
+                # ========== SAVE CAMERA CENTERS AFTER NORMALIZATION ==========
+                post_norm_centers = []
+
+                for ext in extrinsics_array:
+                    R = ext[:3, :3]
+                    t = ext[:3, 3]
+                    C = -R.T @ t          # camera center in world coordinates
+                    post_norm_centers.append(C)
+
+                post_norm_centers = np.array(post_norm_centers)
+
+                post_norm_path = os.path.join(debug_dir, "camera_centers_after_normalization.txt")
+                with open(post_norm_path, "w") as f:
+                    f.write("Camera Centers AFTER Translation Normalization\n")
+                    f.write("=" * 60 + "\n\n")
+                    for i, C in enumerate(post_norm_centers):
+                        f.write(
+                            f"Frame {i}: "
+                            f"[{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n"
+                        )
+
+                print(f"[DEBUG] Saved camera centers after normalization to: {post_norm_path}")
+
                 # Get model
                 model = _backend.get_model()
 
@@ -1447,7 +1493,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     export_format="glb",
                     intrinsics=intrinsics_array,
                     extrinsics=extrinsics_array,
-                    align_to_input_ext_scale=align_poses,
+                    align_to_input_ext_scale=True,
                     process_res=process_res,
                     process_res_method="upper_bound_resize",
                     conf_thresh_percentile=10,
@@ -1465,6 +1511,20 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     filter_black_bg=False,
                     filter_white_bg=False,
                 )
+                # ========== SAVE GLB PERMANENTLY ON BACKEND ==========
+                persistent_glb_dir = os.path.join(os.getcwd(), "saved_glb_outputs")
+                os.makedirs(persistent_glb_dir, exist_ok=True)
+
+                timestamp = int(time.time())
+                saved_glb_name = f"reconstruction_{timestamp}.glb"
+                saved_glb_path = os.path.join(persistent_glb_dir, saved_glb_name)
+
+                import shutil
+                shutil.copyfile(glb_path, saved_glb_path)
+
+                print(f"[BACKEND] GLB permanently saved at: {saved_glb_path}")
+             # ====================================================
+
 
                 print(f"[process-files-with-camera] GLB generated: {glb_path}")
 
