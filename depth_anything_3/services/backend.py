@@ -1255,14 +1255,19 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         align_poses: bool = Form(False),
         process_res: int = Form(504),
     ):
-        """Process uploaded images with provided camera parameters and return GLB file directly.
+        """Process uploaded images with camera data and produce two GLB outputs:
+        1. Reconstruction using supplied camera intrinsics and extrinsics
+        2. Reconstruction without camera data (model infers intrinsics/extrinsics)
+
+        Enforces EXACTLY 5 frames for stable pose alignment.
+        Both GLB files and the inferred camera parameters are saved on the backend.
 
         Args:
-            files: Uploaded image files
-            intrinsics: JSON string of camera intrinsics matrices (Nx3x3)
-            extrinsics: JSON string of camera extrinsics matrices (Nx4x4)
+            files: Uploaded image files (EXACTLY 5 required)
+            intrinsics: JSON string of camera intrinsics matrix (1x3x3, shared across frames)
+            extrinsics: JSON string of camera extrinsics matrices (5x4x4, one per frame)
             output_format: Output format - 'glb', 'ply', or 'json'
-            include_metadata: If True, returns JSON with model data + camera data
+            include_metadata: If True, returns JSON with both models + camera data
         """
         import json
 
@@ -1271,10 +1276,20 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
+        # Enforce EXACTLY 5 frames for stable reconstruction
+        REQUIRED_FRAMES = 5
+        if len(files) != REQUIRED_FRAMES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Exactly {REQUIRED_FRAMES} frames required for stable reconstruction. Received {len(files)} frames. "
+                       f"Please capture exactly {REQUIRED_FRAMES} frames by moving the camera around the object."
+            )
+
         if _backend is None:
             raise HTTPException(status_code=500, detail="Backend not initialized")
 
         try:
+
             # Parse intrinsics and extrinsics from JSON strings
             try:
                 intrinsics_data = json.loads(intrinsics)
@@ -1317,7 +1332,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             print(f"[VERIFY] ================================================")
             # ========== END DEBUG ==========
 
-            # Validate counts
+            # Validate frame count matches extrinsics
             if len(files) != len(extrinsics_array):
                 raise HTTPException(
                     status_code=400,
@@ -1351,14 +1366,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 )
             # ======================================================
 
-
             # Validate matrix shapes
-            if intrinsics_array.ndim != 3 or intrinsics_array.shape[1:] != (3, 3):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Intrinsics must be Nx3x3, got shape {intrinsics_array.shape}"
-                )
-
             if extrinsics_array.ndim != 3 or extrinsics_array.shape[1:] != (4, 4):
                 raise HTTPException(
                     status_code=400,
@@ -1379,14 +1387,16 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
 
             # Create temporary directory for processing
             with tempfile.TemporaryDirectory() as temp_dir:
-                processed_images = []
-
-                # ========== SAVE RECEIVED IMAGES TO DEBUG DIRECTORY ==========
+                # ========== SAVE IMAGES TO DEBUG DIRECTORY ==========
                 # Create a persistent directory to save received images for debugging
-                debug_dir = os.path.join(os.getcwd(), "debug_received_images", f"capture_{int(time.time())}")
+                timestamp = int(time.time())
+                debug_dir = os.path.join(os.getcwd(), "debug_received_images", f"capture_{timestamp}")
                 os.makedirs(debug_dir, exist_ok=True)
                 print(f"[DEBUG] Saving received images to: {debug_dir}")
 
+                processed_images = []
+
+                # Process all uploaded files
                 for file in files:
                     if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif')):
                         raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
@@ -1405,7 +1415,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     print(f"[DEBUG] Saved to debug dir: {debug_file_path}")
 
                     processed_images.append(file_path)
-                    print(f"[process-files-with-camera] Saved: {file.filename}")
+
+                print(f"[process-files-with-camera] Saved {len(processed_images)} images")
 
                 # ========== SAVE CAMERA DATA TO DEBUG DIRECTORY ==========
                 # Save intrinsics and extrinsics as JSON for inspection
@@ -1437,62 +1448,153 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 if not processed_images:
                     raise HTTPException(status_code=400, detail="No valid images found")
 
-                print(f"[process-files-with-camera] Processing {len(processed_images)} images with camera data")
-                
-
-                centers = []
-                for ext in extrinsics_array:
-                    R = ext[:3,:3]
-                    t = ext[:3,3]
-                    C = -R.T @ t
-                    centers.append(C)
-                centers = np.array(centers)
-                
-                #Compute mean baseline relative to first frame
-                baseline = np.mean(np.linalg.norm(centers - centers[0], axis=1))
-
-
-                print(f"[SCALE] Mean camera baseline before normalization: {baseline:.6f}")
-                #Normalize translation scale
-                if baseline > 1e-6:
-                    extrinsics_array[:, :3, 3] /= baseline
-                    print("[SCALE] Extrinsics translations normalized (COLMAP-like scale)")
-                else:
-                    print("[SCALE][WARN] Baseline too small — normalization skipped")
-
-                # ========== SAVE CAMERA CENTERS AFTER NORMALIZATION ==========
-                post_norm_centers = []
-
-                for ext in extrinsics_array:
-                    R = ext[:3, :3]
-                    t = ext[:3, 3]
-                    C = -R.T @ t          # camera center in world coordinates
-                    post_norm_centers.append(C)
-
-                post_norm_centers = np.array(post_norm_centers)
-
-                post_norm_path = os.path.join(debug_dir, "camera_centers_after_normalization.txt")
-                with open(post_norm_path, "w") as f:
-                    f.write("Camera Centers AFTER Translation Normalization\n")
-                    f.write("=" * 60 + "\n\n")
-                    for i, C in enumerate(post_norm_centers):
-                        f.write(
-                            f"Frame {i}: "
-                            f"[{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n"
-                        )
-
-                print(f"[DEBUG] Saved camera centers after normalization to: {post_norm_path}")
+                print(f"[process-files-with-camera] Processing {len(processed_images)} images with two reconstruction modes")
 
                 # Get model
                 model = _backend.get_model()
 
-                # Run inference with provided camera parameters
-                prediction = model.inference(
+                # ========== CAMERA MOTION VALIDATION ==========
+                print("\n[MOTION CHECK] Validating camera motion for pose alignment")
+
+                # Compute camera centers from world-to-camera extrinsics
+                centers = []
+                for ext in extrinsics_array:
+                    R = ext[:3, :3]
+                    t = ext[:3, 3]
+                    C = -R.T @ t  # Camera center in world coordinates
+                    centers.append(C)
+                centers = np.array(centers)
+
+                # Compute mean baseline (average distance from first camera)
+                baseline = np.mean(np.linalg.norm(centers - centers[0], axis=1))
+
+                # Compute camera spread (max pairwise distance)
+                max_distance = 0
+                for i in range(len(centers)):
+                    for j in range(i + 1, len(centers)):
+                        dist = np.linalg.norm(centers[i] - centers[j])
+                        max_distance = max(max_distance, dist)
+
+                print(f"[MOTION CHECK] Mean baseline: {baseline:.6f}m")
+                print(f"[MOTION CHECK] Max camera distance: {max_distance:.6f}m")
+                print(f"[MOTION CHECK] Number of frames: {len(centers)}")
+
+                # Determine if we have sufficient motion for pose alignment
+                # Minimum thresholds: 10cm average movement OR 20cm max separation
+                MIN_BASELINE = 0.10  # 10cm
+                MIN_MAX_DISTANCE = 0.20  # 20cm
+
+                has_sufficient_motion = (baseline > MIN_BASELINE) or (max_distance > MIN_MAX_DISTANCE)
+
+                if has_sufficient_motion:
+                    print(f"[MOTION CHECK] ✓ Sufficient camera motion detected - pose alignment ENABLED")
+                    use_pose_alignment = True
+                else:
+                    print(f"[MOTION CHECK] ✗ Insufficient camera motion - pose alignment DISABLED")
+                    print(f"[MOTION CHECK]   Please move camera more (currently: {max_distance:.3f}m, need: {MIN_MAX_DISTANCE:.3f}m)")
+                    use_pose_alignment = False
+
+                # ========== RECONSTRUCTION 1: WITH SUPPLIED CAMERA DATA ==========
+                print("\n[RECONSTRUCTION 1] Using supplied camera intrinsics and extrinsics")
+                print(f"[RECONSTRUCTION 1] Pose alignment: {'ENABLED' if use_pose_alignment else 'DISABLED (insufficient motion)'}")
+
+                # Make a copy of extrinsics (don't modify original)
+                extrinsics_with_camera = extrinsics_array.copy()
+
+                # Save pre-normalization camera centers
+                prenorm_centers_path = os.path.join(debug_dir, "camera_centers_before_normalization.txt")
+                with open(prenorm_centers_path, "w") as f:
+                    f.write("Camera Centers BEFORE Normalization\n")
+                    f.write("=" * 60 + "\n\n")
+                    for i, C in enumerate(centers):
+                        f.write(f"Frame {i}: [{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n")
+                    f.write(f"\nMean baseline: {baseline:.6f}m\n")
+                    f.write(f"Max distance: {max_distance:.6f}m\n")
+                print(f"[DEBUG] Saved pre-normalization camera centers to: {prenorm_centers_path}")
+
+                # Only normalize if we have sufficient motion
+                if has_sufficient_motion and baseline > 1e-6:
+                    extrinsics_with_camera[:, :3, 3] /= baseline
+                    print(f"[SCALE] Extrinsics translations normalized by {baseline:.6f}")
+
+                    # Compute post-normalization centers
+                    postnorm_centers = []
+                    for ext in extrinsics_with_camera:
+                        R = ext[:3, :3]
+                        t = ext[:3, 3]
+                        C = -R.T @ t
+                        postnorm_centers.append(C)
+                    postnorm_centers = np.array(postnorm_centers)
+
+                    # Save post-normalization camera centers
+                    postnorm_centers_path = os.path.join(debug_dir, "camera_centers_after_normalization.txt")
+                    with open(postnorm_centers_path, "w") as f:
+                        f.write("Camera Centers AFTER Translation Normalization\n")
+                        f.write("=" * 60 + "\n\n")
+                        for i, C in enumerate(postnorm_centers):
+                            f.write(f"Frame {i}: [{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n")
+                    print(f"[DEBUG] Saved post-normalization camera centers to: {postnorm_centers_path}")
+                else:
+                    print("[SCALE] Normalization skipped (insufficient motion or zero baseline)")
+
+                # Run inference WITH camera parameters (with safe alignment handling)
+                try:
+                    prediction_with_camera = model.inference(
+                        image=processed_images,
+                        export_dir=None,
+                        export_format="glb",
+                        intrinsics=intrinsics_array,
+                        extrinsics=extrinsics_with_camera,
+                        align_to_input_ext_scale=use_pose_alignment,  # Only enable if sufficient motion
+                        process_res=process_res,
+                        process_res_method="upper_bound_resize",
+                        conf_thresh_percentile=10,
+                        num_max_points=10000000,
+                        show_cameras=True,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Reconstruction with camera data failed: {str(e)}")
+                    if "align" in str(e).lower() or "umeyama" in str(e).lower():
+                        print("[FALLBACK] Retrying without pose alignment...")
+                        prediction_with_camera = model.inference(
+                            image=processed_images,
+                            export_dir=None,
+                            export_format="glb",
+                            intrinsics=intrinsics_array,
+                            extrinsics=extrinsics_with_camera,
+                            align_to_input_ext_scale=False,  # Disable alignment
+                            process_res=process_res,
+                            process_res_method="upper_bound_resize",
+                            conf_thresh_percentile=10,
+                            num_max_points=10000000,
+                            show_cameras=True,
+                        )
+                    else:
+                        raise
+
+                from ..utils.export.glb import export_to_glb
+                glb_with_camera_path = export_to_glb(
+                    prediction_with_camera,
+                    export_dir=temp_dir,
+                    conf_thresh_percentile=10,
+                    num_max_points=10000000,
+                    show_cameras=True,
+                    filter_black_bg=False,
+                    filter_white_bg=False,
+                )
+
+                print(f"[RECONSTRUCTION 1] GLB generated: {glb_with_camera_path}")
+
+                # ========== RECONSTRUCTION 2: WITHOUT CAMERA DATA (MODEL INFERS) ==========
+                print("\n[RECONSTRUCTION 2] Model inferring camera intrinsics and extrinsics")
+
+                # Run inference WITHOUT camera parameters (model will infer them)
+                prediction_without_camera = model.inference(
                     image=processed_images,
                     export_dir=None,
                     export_format="glb",
-                    intrinsics=intrinsics_array,
-                    extrinsics=extrinsics_array,
+                    intrinsics=None,  # Let model infer intrinsics
+                    extrinsics=None,  # Let model infer extrinsics
                     align_to_input_ext_scale=True,
                     process_res=process_res,
                     process_res_method="upper_bound_resize",
@@ -1501,9 +1603,8 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     show_cameras=True,
                 )
 
-                from ..utils.export.glb import export_to_glb
-                glb_path = export_to_glb(
-                    prediction,
+                glb_without_camera_path = export_to_glb(
+                    prediction_without_camera,
                     export_dir=temp_dir,
                     conf_thresh_percentile=10,
                     num_max_points=10000000,
@@ -1511,25 +1612,83 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                     filter_black_bg=False,
                     filter_white_bg=False,
                 )
-                # ========== SAVE GLB PERMANENTLY ON BACKEND ==========
-                persistent_glb_dir = os.path.join(os.getcwd(), "saved_glb_outputs")
-                os.makedirs(persistent_glb_dir, exist_ok=True)
 
-                timestamp = int(time.time())
-                saved_glb_name = f"reconstruction_{timestamp}.glb"
-                saved_glb_path = os.path.join(persistent_glb_dir, saved_glb_name)
+                print(f"[RECONSTRUCTION 2] GLB generated: {glb_without_camera_path}")
 
+                # Extract inferred camera parameters from prediction_without_camera
+                inferred_intrinsics = None
+                inferred_extrinsics = None
+
+                if hasattr(prediction_without_camera, 'intrinsics') and prediction_without_camera.intrinsics is not None:
+                    inferred_intrinsics = prediction_without_camera.intrinsics
+                    if hasattr(inferred_intrinsics, 'cpu'):
+                        inferred_intrinsics = inferred_intrinsics.cpu().numpy()
+
+                if hasattr(prediction_without_camera, 'extrinsics') and prediction_without_camera.extrinsics is not None:
+                    inferred_extrinsics = prediction_without_camera.extrinsics
+                    if hasattr(inferred_extrinsics, 'cpu'):
+                        inferred_extrinsics = inferred_extrinsics.cpu().numpy()
+                elif hasattr(prediction_without_camera, 'w2c') and prediction_without_camera.w2c is not None:
+                    inferred_extrinsics = prediction_without_camera.w2c
+                    if hasattr(inferred_extrinsics, 'cpu'):
+                        inferred_extrinsics = inferred_extrinsics.cpu().numpy()
+
+                # ========== SAVE BOTH GLB FILES AND CAMERA DATA PERMANENTLY ==========
+                persistent_output_dir = os.path.join(os.getcwd(), "saved_glb_outputs", f"reconstruction_{timestamp}")
+                os.makedirs(persistent_output_dir, exist_ok=True)
+
+                # Save GLB with supplied camera data
                 import shutil
-                shutil.copyfile(glb_path, saved_glb_path)
+                saved_glb_with_camera = os.path.join(persistent_output_dir, "reconstruction_with_camera.glb")
+                shutil.copyfile(glb_with_camera_path, saved_glb_with_camera)
+                print(f"[BACKEND] GLB with supplied camera saved at: {saved_glb_with_camera}")
 
-                print(f"[BACKEND] GLB permanently saved at: {saved_glb_path}")
-             # ====================================================
+                # Save GLB without camera data (inferred)
+                saved_glb_without_camera = os.path.join(persistent_output_dir, "reconstruction_inferred.glb")
+                shutil.copyfile(glb_without_camera_path, saved_glb_without_camera)
+                print(f"[BACKEND] GLB with inferred camera saved at: {saved_glb_without_camera}")
 
+                # Save all camera parameters to JSON
+                camera_comparison = {
+                    "supplied_intrinsics": intrinsics_array.tolist(),
+                    "supplied_extrinsics": extrinsics_array.tolist(),
+                    "inferred_intrinsics": inferred_intrinsics.tolist() if inferred_intrinsics is not None else None,
+                    "inferred_extrinsics": inferred_extrinsics.tolist() if inferred_extrinsics is not None else None,
+                    "num_images": len(processed_images),
+                    "image_files": [os.path.basename(p) for p in processed_images],
+                    "timestamp": timestamp
+                }
 
-                print(f"[process-files-with-camera] GLB generated: {glb_path}")
+                camera_comparison_path = os.path.join(persistent_output_dir, "camera_comparison.json")
+                with open(camera_comparison_path, "w") as f:
+                    json.dump(camera_comparison, f, indent=2)
+                print(f"[BACKEND] Camera comparison saved at: {camera_comparison_path}")
 
-                # Return GLB file
-                with open(glb_path, "rb") as f:
+                # Save supplied camera data
+                supplied_camera_path = os.path.join(persistent_output_dir, "supplied_camera.json")
+                with open(supplied_camera_path, "w") as f:
+                    json.dump({
+                        "intrinsics": intrinsics_array.tolist(),
+                        "extrinsics": extrinsics_array.tolist(),
+                        "extrinsics_normalized": extrinsics_with_camera.tolist(),
+                    }, f, indent=2)
+                print(f"[BACKEND] Supplied camera data saved at: {supplied_camera_path}")
+
+                # Save inferred camera data
+                if inferred_intrinsics is not None or inferred_extrinsics is not None:
+                    inferred_camera_path = os.path.join(persistent_output_dir, "inferred_camera.json")
+                    with open(inferred_camera_path, "w") as f:
+                        json.dump({
+                            "intrinsics": inferred_intrinsics.tolist() if inferred_intrinsics is not None else None,
+                            "extrinsics": inferred_extrinsics.tolist() if inferred_extrinsics is not None else None,
+                        }, f, indent=2)
+                    print(f"[BACKEND] Inferred camera data saved at: {inferred_camera_path}")
+
+                print(f"\n[SUCCESS] Both reconstructions completed and saved to: {persistent_output_dir}")
+                # ====================================================
+
+                # Return the GLB with supplied camera data (default)
+                with open(glb_with_camera_path, "rb") as f:
                     glb_data = f.read()
 
                 cleanup_cuda_memory()
@@ -1540,7 +1699,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 return StreamingResponse(
                     generate(),
                     media_type="model/gltf-binary",
-                    headers={"Content-Disposition": "attachment; filename=output.glb"}
+                    headers={"Content-Disposition": "attachment; filename=reconstruction_with_camera.glb"}
                 )
         except Exception as e:
             print("========== TRACEBACK START ==========")
