@@ -320,19 +320,25 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         if extrinsics is None:
             return prediction
         prediction.intrinsics = intrinsics.numpy()
-        _, _, scale, aligned_extrinsics = align_poses_umeyama(
-            prediction.extrinsics,
-            extrinsics.numpy(),
-            ransac=len(extrinsics) >= ransac_view_thresh,
-            return_aligned=True,
-            random_state=42,
-        )
         if align_to_input_ext_scale:
+            # Use input extrinsics directly without Umeyama alignment
+            # This skips the alignment that can fail with degenerate camera poses
+            print("[INFO] Using input extrinsics directly (skipping Umeyama alignment)")
             prediction.extrinsics = extrinsics[..., :3, :].numpy()
-            prediction.depth /= scale
+            # No depth scaling needed when using input poses directly
         else:
+            # Compute alignment using Umeyama algorithm
+            _, _, scale, aligned_extrinsics = align_poses_umeyama(
+                prediction.extrinsics,
+                extrinsics.numpy(),
+                ransac=len(extrinsics) >= ransac_view_thresh,
+                return_aligned=True,
+                random_state=42,
+            )
             prediction.extrinsics = aligned_extrinsics
+
         return prediction
+
 
     def _run_model_forward(
         self,

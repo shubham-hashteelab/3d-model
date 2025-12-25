@@ -1252,7 +1252,7 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
         extrinsics: str = Form(...),
         output_format: str = Form("glb"),
         include_metadata: bool = Form(False),
-        align_poses: bool = Form(False),
+        align_poses: bool = Form(False),  # Kept for API compatibility, but always use True internally
         process_res: int = Form(504),
     ):
         """Process uploaded images with provided camera parameters and return GLB file directly.
@@ -1440,60 +1440,65 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
                 print(f"[process-files-with-camera] Processing {len(processed_images)} images with camera data")
                 
 
-                centers = []
-                for ext in extrinsics_array:
-                    R = ext[:3,:3]
-                    t = ext[:3,3]
-                    C = -R.T @ t
-                    centers.append(C)
-                centers = np.array(centers)
+                # centers = []
+                # for ext in extrinsics_array:
+                #     R = ext[:3,:3]
+                #     t = ext[:3,3]
+                #     C = -R.T @ t
+                #     centers.append(C)
+                # centers = np.array(centers)
                 
-                #Compute mean baseline relative to first frame
-                baseline = np.mean(np.linalg.norm(centers - centers[0], axis=1))
+                # #Compute mean baseline relative to first frame
+                # baseline = np.mean(np.linalg.norm(centers - centers[0], axis=1))
 
 
-                print(f"[SCALE] Mean camera baseline before normalization: {baseline:.6f}")
-                #Normalize translation scale
-                if baseline > 1e-6:
-                    extrinsics_array[:, :3, 3] /= baseline
-                    print("[SCALE] Extrinsics translations normalized (COLMAP-like scale)")
-                else:
-                    print("[SCALE][WARN] Baseline too small — normalization skipped")
+                # print(f"[SCALE] Mean camera baseline before normalization: {baseline:.6f}")
+                # #Normalize translation scale
+                # if baseline > 1e-6:
+                #     extrinsics_array[:, :3, 3] /= baseline
+                #     print("[SCALE] Extrinsics translations normalized (COLMAP-like scale)")
+                # else:
+                #     print("[SCALE][WARN] Baseline too small — normalization skipped")
 
-                # ========== SAVE CAMERA CENTERS AFTER NORMALIZATION ==========
-                post_norm_centers = []
+                # # ========== SAVE CAMERA CENTERS AFTER NORMALIZATION ==========
+                # post_norm_centers = []
 
-                for ext in extrinsics_array:
-                    R = ext[:3, :3]
-                    t = ext[:3, 3]
-                    C = -R.T @ t          # camera center in world coordinates
-                    post_norm_centers.append(C)
+                # for ext in extrinsics_array:
+                #     R = ext[:3, :3]
+                #     t = ext[:3, 3]
+                #     C = -R.T @ t          # camera center in world coordinates
+                #     post_norm_centers.append(C)
 
-                post_norm_centers = np.array(post_norm_centers)
+                # post_norm_centers = np.array(post_norm_centers)
 
-                post_norm_path = os.path.join(debug_dir, "camera_centers_after_normalization.txt")
-                with open(post_norm_path, "w") as f:
-                    f.write("Camera Centers AFTER Translation Normalization\n")
-                    f.write("=" * 60 + "\n\n")
-                    for i, C in enumerate(post_norm_centers):
-                        f.write(
-                            f"Frame {i}: "
-                            f"[{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n"
-                        )
+                # post_norm_path = os.path.join(debug_dir, "camera_centers_after_normalization.txt")
+                # with open(post_norm_path, "w") as f:
+                #     f.write("Camera Centers AFTER Translation Normalization\n")
+                #     f.write("=" * 60 + "\n\n")
+                #     for i, C in enumerate(post_norm_centers):
+                #         f.write(
+                #             f"Frame {i}: "
+                #             f"[{C[0]:.6f}, {C[1]:.6f}, {C[2]:.6f}]\n"
+                #         )
 
-                print(f"[DEBUG] Saved camera centers after normalization to: {post_norm_path}")
+                # print(f"[DEBUG] Saved camera centers after normalization to: {post_norm_path}")
 
                 # Get model
                 model = _backend.get_model()
 
                 # Run inference with provided camera parameters
+                # CRITICAL: align_to_input_ext_scale behavior (from docs):
+                #   True = Use input extrinsics directly (skip Umeyama alignment)
+                #   False = Compute internal alignment via Umeyama (can fail with degenerate poses)
+                # We want True to use ARCore poses directly and skip alignment
+                print(f"[INFO] Using align_to_input_ext_scale=True to use ARCore poses directly")
                 prediction = model.inference(
                     image=processed_images,
                     export_dir=None,
                     export_format="glb",
                     intrinsics=intrinsics_array,
                     extrinsics=extrinsics_array,
-                    align_to_input_ext_scale=True,
+                    align_to_input_ext_scale=True,  # True = use input poses, skip alignment
                     process_res=process_res,
                     process_res_method="upper_bound_resize",
                     conf_thresh_percentile=10,
