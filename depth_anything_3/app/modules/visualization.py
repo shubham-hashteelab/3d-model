@@ -346,6 +346,24 @@ class VisualizationHandler:
                     ):
                         d = current_view["depth"][p[1], p[0]]
                         depth_text += f"- **P{i + 1} depth: {d:.2f}m**\n"
+                        
+                        # Compute and display 3D coordinates if intrinsics are available
+                        if current_view["intrinsics"] is not None:
+                            try:
+                                K = current_view["intrinsics"]  # 3x3 intrinsic matrix
+                                fx, fy = K[0, 0], K[1, 1]  # focal lengths
+                                cx, cy = K[0, 2], K[1, 2]  # principal point
+                                
+                                # Convert pixel coordinates to 3D camera coordinates
+                                u, v = p[0], p[1]
+                                x = (u - cx) * d / fx
+                                y = (v - cy) * d / fy
+                                z = d
+                                
+                                depth_text += f"  - **3D coordinates: ({x:.2f}, {y:.2f}, {z:.2f})**\n"
+                            except Exception as e:
+                                print(f"3D coordinate computation error for P{i + 1}: {e}")
+                                depth_text += f"  - **3D coordinates: computation error**\n"
                     else:
                         depth_text += f"- **P{i + 1}: Click position ({p[0]}, {p[1]}) - No depth information**\n"  # noqa: E501
             except Exception as e:
