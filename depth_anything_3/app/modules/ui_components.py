@@ -212,7 +212,7 @@ class UIComponents:
                 label="Image Processing Method",
                 info="low_res for much more images",
                 scale=1,
-                visible=False,
+                visible=True,
             )
             # Modify line 220, add color class
             infer_gs = gr.Checkbox(
@@ -255,14 +255,14 @@ class UIComponents:
                     value="smooth",
                     label=("Rendering trajectory for 3DGS viewpoints (requires n_views ≥ 2)"),
                     info=("'smooth' for view interpolation; 'extend' for longer trajectory"),
-                    visible=False,  # initially hidden
+                    visible=False,
                 )
                 gs_video_quality = gr.Dropdown(
                     choices=["low", "medium", "high"],
                     value="low",
                     label=("Video quality for 3DGS rendered outputs"),
                     info=("'low' for faster loading speed; 'high' for better visual quality"),
-                    visible=False,  # initially hidden
+                    visible=False,
                 )
 
             # Reconstruct and Clear buttons (before Visualization Options)
@@ -270,10 +270,10 @@ class UIComponents:
                 submit_btn = gr.Button("Reconstruct", scale=1, variant="primary")
                 clear_btn = gr.ClearButton(scale=1)
 
-            gr.Markdown("### Visualization Options: (Click Reconstruct to update)", visible=False)
-            show_cam = gr.Checkbox(label="Show Camera", value=True, visible=False)
-            filter_black_bg = gr.Checkbox(label="Filter Black Background", value=False, visible=False)
-            filter_white_bg = gr.Checkbox(label="Filter White Background", value=False, visible=False)
+            gr.Markdown("### Visualization Options: (Click Reconstruct to update)", visible=True)
+            show_cam = gr.Checkbox(label="Show Camera", value=True, visible=True)
+            filter_black_bg = gr.Checkbox(label="Filter Black Background", value=False, visible=True)
+            filter_white_bg = gr.Checkbox(label="Filter White Background", value=False, visible=True)
             save_percentage = gr.Slider(
                 minimum=0,
                 maximum=100,
@@ -281,7 +281,7 @@ class UIComponents:
                 step=1,
                 label="Filter Percentage",
                 info="Confidence Threshold (%): Higher values filter more points.",
-                visible=False,
+                visible=True,
             )
             num_max_points = gr.Slider(
                 minimum=1000,
@@ -290,7 +290,7 @@ class UIComponents:
                 step=1000,
                 label="Max Points (K points)",
                 info="Maximum number of points to export to GLB (in thousands)",
-                visible=False,
+                visible=True,
             )
 
         return (
