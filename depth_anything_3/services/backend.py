@@ -1463,6 +1463,102 @@ def create_app(model_dir: str, device: str = "cuda", gallery_dir: Optional[str] 
             cleanup_cuda_memory()
             raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
+    @_app.post("/panorama")
+    async def generate_panorama(
+        video: UploadFile = File(...),
+        fps: float = Form(2.0),
+    ):
+        """Generate a panoramic 2D image from an uploaded video.
+
+        Runs DA3 inference on extracted frames, then orthographically projects
+        the resulting 3D point cloud into a single panorama image.
+
+        Args:
+            video: Uploaded video file (.mp4, .avi, .mov, etc.)
+            fps: Frames per second to extract from the video (default: 2.0).
+                 Controls how many frames go into the model.
+        """
+        if _backend is None:
+            raise HTTPException(status_code=500, detail="Backend not initialized")
+
+        supported_exts = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm', '.m4v')
+        if not video.filename.lower().endswith(supported_exts):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported video format. Supported: {', '.join(supported_exts)}",
+            )
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save uploaded video
+                video_path = os.path.join(temp_dir, video.filename)
+                with open(video_path, "wb") as f:
+                    content = await video.read()
+                    f.write(content)
+
+                # Extract frames at the requested fps
+                frames_dir = os.path.join(temp_dir, "frames")
+                os.makedirs(frames_dir, exist_ok=True)
+                frame_paths = VideoHandler.process(video_path, frames_dir, fps=fps)
+
+                if not frame_paths:
+                    raise HTTPException(status_code=400, detail="No frames could be extracted from video")
+
+                print(f"[Panorama API] Extracted {len(frame_paths)} frames at {fps:.2f} fps")
+
+                # Run DA3 inference (low-res)
+                model = _backend.get_model()
+                prediction = model.inference(
+                    image=frame_paths,
+                    export_dir=None,
+                    export_format="mini_npz",
+                    process_res_method="upper_bound_resize",
+                )
+
+                # Extract arrays from prediction
+                images = prediction.processed_images  # (N, H, W, 3) uint8
+                depths = prediction.depth              # (N, H, W)
+                intrinsics = prediction.intrinsics     # (N, 3, 3)
+                extrinsics = prediction.extrinsics     # (N, 3, 4) or (N, 4, 4)
+
+                if images is None or depths is None or intrinsics is None or extrinsics is None:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Inference did not produce required data (images, depths, intrinsics, extrinsics)",
+                    )
+
+                # Generate panorama
+                from ..utils.export.panorama import export_to_panorama
+
+                panorama_path = export_to_panorama(
+                    images=images,
+                    depths=depths,
+                    intrinsics=intrinsics,
+                    extrinsics=extrinsics,
+                    export_dir=temp_dir,
+                )
+
+                if not os.path.exists(panorama_path):
+                    raise HTTPException(status_code=500, detail="Panorama generation failed")
+
+                # Read and return the image
+                with open(panorama_path, "rb") as f:
+                    panorama_data = f.read()
+
+                cleanup_cuda_memory()
+
+                return StreamingResponse(
+                    io.BytesIO(panorama_data),
+                    media_type="image/png",
+                    headers={"Content-Disposition": "attachment; filename=panorama.png"},
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            cleanup_cuda_memory()
+            raise HTTPException(status_code=500, detail=f"Panorama generation failed: {str(e)}")
+
     @_app.get("/task/{task_id}", response_model=TaskStatus)
     async def get_task_status(task_id: str):
         """Get task status by task ID."""
