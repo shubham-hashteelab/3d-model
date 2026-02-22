@@ -584,6 +584,68 @@ class EventHandlers:
             processed_data, measure_points, current_view_selector, event
         )
 
+    def generate_panorama(
+        self,
+        target_dir: str,
+        processed_data: Optional[Dict[int, Dict[str, Any]]],
+    ) -> Tuple[Optional[str], str]:
+        """
+        Generate a panoramic 2D image from the reconstruction data.
+
+        Args:
+            target_dir: Directory containing reconstruction results
+            processed_data: Processed data from reconstruction
+
+        Returns:
+            Tuple of (panorama_image_path, status_message)
+        """
+        if not target_dir or target_dir == "None" or not os.path.isdir(target_dir):
+            return None, "No reconstruction available. Please click Reconstruct first."
+
+        # Load predictions from cache
+        predictions_path = os.path.join(target_dir, "predictions.npz")
+        if not os.path.exists(predictions_path):
+            return None, "No reconstruction data found. Please click Reconstruct first."
+
+        try:
+            print("[Panorama] Loading reconstruction data...")
+            loaded = np.load(predictions_path, allow_pickle=True)
+
+            images = loaded.get("images", None)
+            depths = loaded.get("depths", None)
+            intrinsics = loaded.get("intrinsics", None)
+            extrinsics = loaded.get("extrinsics", None)
+
+            if images is None or depths is None:
+                return None, "Reconstruction data incomplete (missing images or depths)."
+            if intrinsics is None or extrinsics is None:
+                return None, "Reconstruction data incomplete (missing camera parameters)."
+
+            print(f"[Panorama] Data loaded: {images.shape[0]} frames")
+
+            from depth_anything_3.utils.export.panorama import export_to_panorama
+
+            panorama_path = export_to_panorama(
+                images=images,
+                depths=depths,
+                intrinsics=intrinsics,
+                extrinsics=extrinsics,
+                export_dir=target_dir,
+                ref_frame="middle",
+                fill_holes=True,
+            )
+
+            if os.path.exists(panorama_path):
+                return panorama_path, f"Panorama generated successfully! ({images.shape[0]} frames stitched)"
+            else:
+                return None, "Panorama generation failed - output file not created."
+
+        except Exception as e:
+            print(f"[Panorama] Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, f"Panorama generation failed: {str(e)}"
+
     def select_first_frame(
         self, image_gallery: List, selected_index: int = 0
     ) -> Tuple[List, str, str]:

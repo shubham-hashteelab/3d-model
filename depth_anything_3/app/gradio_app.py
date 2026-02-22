@@ -220,6 +220,11 @@ class DepthAnything3App:
                             with gr.Tab("Rendered Scenes"):
                                 gs_video, gs_info = self.ui_components.create_nvs_video()
 
+                            with gr.Tab("Panorama"):
+                                panorama_image, panorama_info = (
+                                    self.ui_components.create_panorama_section()
+                                )
+
                         # Inference control section (before inference)
                         (process_res_method_dropdown, infer_gs) = (
                             self.ui_components.create_inference_control_section()
@@ -235,6 +240,7 @@ class DepthAnything3App:
                             gs_trj_mode,
                             gs_video_quality,
                             submit_btn,
+                            panorama_btn,
                             clear_btn,
                         ) = self.ui_components.create_display_control_section()
 
@@ -287,6 +293,9 @@ class DepthAnything3App:
                 gs_info,
                 gs_trj_mode,
                 gs_video_quality,
+                panorama_btn,
+                panorama_image,
+                panorama_info,
             )
 
         return demo
@@ -328,6 +337,9 @@ class DepthAnything3App:
         gs_info: gr.Markdown,
         gs_trj_mode: gr.Dropdown,
         gs_video_quality: gr.Dropdown,
+        panorama_btn: gr.Button = None,
+        panorama_image: gr.Image = None,
+        panorama_info: gr.Markdown = None,
     ) -> None:
         """
         Set up all event handlers for the application.
@@ -385,6 +397,18 @@ class DepthAnything3App:
             inputs=[],
             outputs=[is_example],  # set is_example to "False"
         )
+
+        # Panorama button
+        if panorama_btn is not None and panorama_image is not None:
+            panorama_btn.click(
+                fn=lambda: "Generating panorama...",
+                inputs=[],
+                outputs=[panorama_info],
+            ).then(
+                fn=self.event_handlers.generate_panorama,
+                inputs=[target_dir_output, processed_data_state],
+                outputs=[panorama_image, panorama_info],
+            )
 
         # Real-time visualization updates
         self._setup_visualization_handlers(

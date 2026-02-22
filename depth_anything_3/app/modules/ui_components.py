@@ -239,6 +239,7 @@ class UIComponents:
         gr.Dropdown,
         gr.Dropdown,
         gr.Button,
+        gr.Button,
         gr.ClearButton,
     ]:
         """
@@ -265,9 +266,10 @@ class UIComponents:
                     visible=False,
                 )
 
-            # Reconstruct and Clear buttons (before Visualization Options)
+            # Reconstruct, Make Panorama, and Clear buttons
             with gr.Row():
                 submit_btn = gr.Button("Reconstruct", scale=1, variant="primary")
+                panorama_btn = gr.Button("Make Panorama", scale=1, variant="secondary")
                 clear_btn = gr.ClearButton(scale=1)
 
             gr.Markdown("### Visualization Options: (Click Reconstruct to update)", visible=True)
@@ -302,8 +304,33 @@ class UIComponents:
             gs_trj_mode,
             gs_video_quality,
             submit_btn,
+            panorama_btn,
             clear_btn,
         )
+
+    def create_panorama_section(self) -> Tuple[gr.Image, gr.Markdown]:
+        """
+        Create the panorama output section.
+
+        Returns:
+            Tuple of (panorama_image, panorama_info)
+        """
+        with gr.Column():
+            panorama_info = gr.Markdown(
+                (
+                    "Click **Make Panorama** after reconstruction to generate "
+                    "a stitched 2D panoramic image from all frames.\n\n"
+                    "This uses depth maps and camera poses to correctly handle "
+                    "parallax and produce a seamless result."
+                ),
+            )
+            panorama_image = gr.Image(
+                type="filepath",
+                label="Panorama Output",
+                interactive=False,
+                height=520,
+            )
+        return panorama_image, panorama_info
 
     def create_control_section(
         self,
