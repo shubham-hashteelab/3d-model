@@ -223,7 +223,7 @@ class UIComponents:
                     'fa-color-red"></i> requires extra processing time)'
                 ),
                 scale=1,
-                visible=False,
+                visible=True,
             )
 
         return (process_res_method_dropdown, infer_gs)
